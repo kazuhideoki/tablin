@@ -47,6 +47,9 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
     scroll.hasHorizontalScroller = true
     scroll.autohidesScrollers = true
     scroll.borderType = .noBorder
+    scroll.allowsMagnification = true
+    scroll.minMagnification = 0.5
+    scroll.maxMagnification = 3
     content.addSubview(scroll)
     table.owner = self
     table.dataSource = self
@@ -408,9 +411,11 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
     let columns = selection.columns
     mutate("Align Columns") { model in for c in columns { model.columns[c].alignment = value } }
   }
-  @objc func zoomIn(_ sender: Any?) { mutate("Zoom In") { $0.fontSize = min(32, $0.fontSize + 1) } }
+  @objc func zoomIn(_ sender: Any?) {
+    scroll.magnification = min(scroll.maxMagnification, scroll.magnification + 0.1)
+  }
   @objc func zoomOut(_ sender: Any?) {
-    mutate("Zoom Out") { $0.fontSize = max(9, $0.fontSize - 1) }
+    scroll.magnification = max(scroll.minMagnification, scroll.magnification - 0.1)
   }
   @objc func prune(_ sender: Any?) {
     mutate("Prune Empty Edges") { model in

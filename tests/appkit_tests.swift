@@ -62,11 +62,42 @@ import AppKit
     controller.alignRight(nil)
     undo.endUndoGrouping()
     precondition(
-      document.model.wraps && document.model.showsRowNumbers && document.model.fontSize == 14)
+      document.model.wraps && document.model.showsRowNumbers && document.model.fontSize == 13)
     precondition(controller.table.numberOfColumns == document.model.columns.count + 1)
     undo.undo()
     precondition(!document.model.wraps && !document.model.showsRowNumbers)
     print("PASS wrapping / row numbers / zoom / alignment and undo")
+    controller.scroll.magnification = 1
+    controller.window?.contentView?.layoutSubtreeIfNeeded()
+    let beforeZoom = document.model
+    let wasEdited = document.isDocumentEdited
+    let cellFrame = controller.table.frameOfCell(atColumn: 0, row: 1)
+    let originalSize = controller.table.convert(cellFrame, to: nil).size
+    controller.beginEditing()
+    let zoomEditor = controller.editor!
+    let editorSize = zoomEditor.convert(zoomEditor.bounds, to: nil).size
+    controller.zoomIn(nil)
+    let enlargedSize = controller.table.convert(cellFrame, to: nil).size
+    precondition(abs(enlargedSize.width / originalSize.width - 1.1) < 0.001)
+    precondition(abs(enlargedSize.height / originalSize.height - 1.1) < 0.001)
+    precondition(controller.editor === zoomEditor)
+    precondition(abs(zoomEditor.convert(zoomEditor.bounds, to: nil).width / editorSize.width - 1.1) < 0.001)
+    let center = controller.table.convert(
+      NSPoint(x: cellFrame.midX, y: cellFrame.midY), to: nil)
+    let hit = controller.table.convert(center, from: nil)
+    precondition(controller.table.row(at: hit) == 1 && controller.table.column(at: hit) == 0)
+    controller.zoomOut(nil)
+    precondition(abs(controller.scroll.magnification - 1) < 0.001)
+    for _ in 0..<40 { controller.zoomOut(nil) }
+    precondition(controller.scroll.magnification == 0.5)
+    for _ in 0..<40 { controller.zoomIn(nil) }
+    precondition(controller.scroll.magnification == 3)
+    precondition(document.model == beforeZoom && document.isDocumentEdited == wasEdited)
+    controller.cancelEditing()
+    controller.reload()
+    precondition(controller.scroll.magnification == 3)
+    controller.scroll.magnification = 1
+    print("PASS whole-table zoom / editor scaling / hit testing / limits without document changes")
     let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(
       "tablin_bookmark_" + UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -110,6 +141,6 @@ import AppKit
     precondition(document.model.columns[0].width == 500)
     print("PASS column resizing recalculates wrapped row height")
     document.close()
-    print("9 AppKit checks passed")
+    print("10 AppKit checks passed")
   }
 }
