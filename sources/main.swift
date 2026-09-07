@@ -22,7 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
   func application(_ application: NSApplication, open urls: [URL]) {
     for url in urls {
-      if url.scheme == "tablin" {
+      if url.scheme == tablinURLScheme {
         openCell(url)
       } else {
         documents.openDocument(withContentsOf: url, display: true) { _, _, error in

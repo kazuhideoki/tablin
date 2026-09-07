@@ -29,6 +29,11 @@ import Foundation
       restored == model, "native round trip preserves IDs, multiline, Unicode and view settings")
     let file = URL(fileURLWithPath: "/private/tmp/日本語 & # テーブル.tablin")
     let url = model.link(file: file, row: 1, column: 1)
+    let expectedScheme = ProcessInfo.processInfo.environment["TABLIN_EXPECTED_SCHEME"] ?? "tablin"
+    check(url.scheme == expectedScheme, "cell link uses this app's registered scheme")
+    var foreignURL = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+    foreignURL.scheme = "tablin-dev-another-worktree"
+    rejects("another worktree's cell link is rejected") { _ = try CellLink(foreignURL.url!) }
     let link = try CellLink(url)
     check(link.path == file.path, "URL escaping of Japanese, space, ampersand and hash")
     model.insertRow(at: 1)
