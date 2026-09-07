@@ -1,0 +1,10 @@
+#!/bin/bash
+set -euo pipefail
+cd "$(dirname "$0")"
+mkdir -p .build/Tablin.app/Contents/MacOS .build/module_cache
+swiftc -swift-version 5 -O -target "$(uname -m)-apple-macosx13.0" -module-cache-path .build/module_cache \
+	-framework AppKit -framework UniformTypeIdentifiers \
+	sources/*.swift -o .build/Tablin.app/Contents/MacOS/tablin
+cp info.plist .build/Tablin.app/Contents/Info.plist
+codesign --force --sign - .build/Tablin.app
+printf '%s\n' "$PWD/.build/Tablin.app"

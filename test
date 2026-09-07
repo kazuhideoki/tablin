@@ -1,0 +1,15 @@
+#!/bin/bash
+set -euo pipefail
+cd "$(dirname "$0")"
+mkdir -p .build/module_cache
+swiftc -swift-version 5 -O -target "$(uname -m)-apple-macosx13.0" -module-cache-path .build/module_cache \
+	sources/table_model.swift tests/model_tests.swift -o .build/model_tests
+.build/model_tests
+swiftc -swift-version 5 -O -target "$(uname -m)-apple-macosx13.0" -module-cache-path .build/module_cache \
+	-framework AppKit -framework UniformTypeIdentifiers \
+	sources/table_model.swift sources/document.swift sources/table_view.swift \
+	sources/window_controller.swift tests/appkit_tests.swift -o .build/appkit_tests
+.build/appkit_tests
+shellcheck build test
+shfmt -d build test
+plutil -lint info.plist

@@ -1,0 +1,66 @@
+{
+  "columns" : [
+    {
+      "alignment" : 0,
+      "id" : "ECEB8D16-88D1-4DEC-A27C-5695B9B42800",
+      "width" : 150
+    },
+    {
+      "alignment" : 0,
+      "id" : "B509AD97-EF3F-4CC7-AC43-58243CCC926B",
+      "width" : 180
+    },
+    {
+      "alignment" : 0,
+      "id" : "F7206E97-1F7F-4F3B-BE06-E774A65A34D6",
+      "width" : 430
+    }
+  ],
+  "fontSize" : 13,
+  "id" : "9DAE01F3-5A7B-46AB-AD62-D5FFCFD325EC",
+  "rows" : [
+    {
+      "cells" : [
+        "機能",
+        "操作",
+        "説明"
+      ],
+      "id" : "2066171F-7E2A-4C18-8304-21EA5156C7FD"
+    },
+    {
+      "cells" : [
+        "セルリンク",
+        "Command+Option+C",
+        "コピーしたリンクからこのセルを開けます。\n行や列を追加してもリンク先を保持します。"
+      ],
+      "id" : "73E72617-65E8-45BB-8152-D14A0D8B4F02"
+    },
+    {
+      "cells" : [
+        "折り返し",
+        "Wrap",
+        "長い文章は列幅に合わせて折り返して表示できます。列の境界をドラッグすると幅を調整できます。"
+      ],
+      "id" : "2CDDE7EB-EC53-4423-AE96-DB0273925CA8"
+    },
+    {
+      "cells" : [
+        "セル内改行",
+        "Option+Return",
+        "1つのセルに複数行を入力できます。\nこれは2行目の文章です。"
+      ],
+      "id" : "FAFB320A-500B-499A-86B5-30F2DB6F8460"
+    },
+    {
+      "cells" : [
+        "",
+        "",
+        ""
+      ],
+      "id" : "2BCD1C56-D409-4744-99E5-7CAF0381821C"
+    }
+  ],
+  "showsRowNumbers" : false,
+  "version" : 1,
+  "wraps" : true
+}

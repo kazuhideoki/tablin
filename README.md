@@ -1,1 +1,123 @@
 # Tablin
+
+Tablinは、キーボードでの編集とセルへの直接リンクに対応したmacOS用の表エディタです。
+SwiftとAppKitで実装しています。CSV・TSV・Markdownの取り込みや、セル内の改行・折り返し表示に対応します。
+
+表を軽快に編集する体験のお手本となった[TableFlip](https://tableflipapp.com/)と、その開発者に感謝と敬意を表します。
+
+## ビルドと起動
+
+macOS 13以降を対象に、インストール済みのCommand Line Toolsでビルドします。
+Xcodeのプロジェクト作成や外部パッケージのインストールは不要です。
+
+```sh
+cd /path/to/tablin
+make build
+open .build/Tablin.app
+```
+
+ビルドしたMacのCPU向けに生成します。
+生成物は `.build/Tablin.app`、サンプルは `examples/comparison.tablin` にあります。
+初回起動によって `tablin://` がこのアプリに登録されます。
+アプリの場所を移動した場合は、移動先で一度起動してください。
+
+## ローカルインストール
+
+```sh
+cd /path/to/tablin
+make install
+make run
+```
+
+`make install` はビルド後に `~/Applications/Tablin.app` へコピーし、署名を検証します。
+`make run` はインストール先のアプリを起動します。
+更新時はTablinを終了してから、同じ手順を実行してください。
+
+インストール先は `INSTALL_DIR` で変更できます。起動時にも同じ値を指定します。
+
+```sh
+make install INSTALL_DIR=/Applications
+make run INSTALL_DIR=/Applications
+```
+
+## 基本操作
+
+| 操作 | キー・UI |
+| --- | --- |
+| セル移動 | 矢印キー |
+| 右・左へ移動 | Tab / Shift+Tab |
+| 下・上へ移動 | Return / Shift+Return |
+| 行・列の端へ移動 | Command+矢印 |
+| 範囲選択 | Shift+矢印、Shift+クリック、ドラッグ |
+| 内容を置き換えて編集 | セル選択中に文字を入力 |
+| 内容を残して編集 | Option+Return、ダブルクリック |
+| 編集中のセル内改行 | Option+Return |
+| 編集を取り消す | Escape |
+| 編集中に隣のセルへ | Tab、左右の文字列端で矢印 |
+| 行・列を挿入 | Option+矢印、ツールバー |
+| 行・列を削除 | Remove Row / Remove Col |
+| コピー・切り取り・貼り付け | Command+C / X / V |
+| Undo / Redo | Command+Z / Command+Shift+Z |
+| 折り返し切り替え | Wrap、Command+Option+W |
+| 列幅調整 | 見出し行の列境界をドラッグ |
+| セルリンクをコピー | Copy Link、右クリック、Command+Option+C |
+| 表をMarkdownでコピー | Command+Shift+C |
+| 行番号・表示倍率 | Viewメニュー |
+| 列の文字揃え | ツールバーのLeft / Center / Right |
+
+0行目は見出しです。見出しも通常のセルと同じ方法で編集できます。
+右端・下端を越える移動では行・列を追加します。空の行・列も保存され、末尾の不要な空白はPruneで取り除けます。
+
+編集中のUndoは文字編集に適用されます。セルを確定すると、セル編集全体を文書のUndoで戻せます。
+日本語の変換中は、Returnなどをセル移動として横取りせず、標準のテキスト入力へ渡します。
+
+## セルへのリンク
+
+1. Tablinでセルを選び、`Command+Option+C` を押します。
+2. 未保存なら `.tablin` 文書として保存します。リンクのコピー前に文書を保存します。
+3. コピーしたリンクを、ノートや文書などに貼り付けます。
+4. 同じMacでリンクを開くと、Tablinの対象セルへ移動します。
+
+リンク先を開くには、利用するアプリが `tablin://` のようなカスタムURLスキームに対応している必要があります。
+
+リンクは文書・行・列のUUIDを含みます。行列の挿入で座標が変わっても対象を保持します。
+削除された行・列にはエラーを表示し、別のセルへ置き換えて移動しません。
+保存先のパスに加え、同じMacのブックマークから移動・改名されたファイルを探します。
+別のMacへのリンク移行や、Finderで複製した同じUUIDの文書の使い分けには対応していません。
+
+## 保存と入出力
+
+- `.tablin` はJSON文書です。内容、固定ID、列幅、文字揃え、折り返し、行番号、表示倍率を保存します。
+- `File → Import CSV / TSV / Markdown…` は新しい文書への取り込みです。
+- CSV/TSVでは引用符で囲んだセル内の改行・タブ・カンマを扱えます。UTF-8を使用します。
+- Markdownは最初のパイプ表を取り込みます。文書全体や複数の表の直接編集には対応していません。
+- `File → Export CSV… / Export Markdown…` で内容を書き出します。Markdownのセル内改行は `<br>` に変換します。
+- CSV/Markdownにはセルの固定IDやTablinの表示設定を出力しません。
+
+## 制約
+
+1文書につき1つの表を扱います。
+表以外のMarkdown文章の保持、複数表タブ、外部エディタとの同時編集は対象外です。
+非常に長いセルは表示高を600ptに制限し、編集欄のスクロールで全文を扱います。
+
+## 開発・テスト
+
+ビルドにはmacOS 13以降とCommand Line Toolsが必要です。
+テストには追加で `shellcheck` と `shfmt` を使用します。
+
+```sh
+make test
+```
+
+データモデルとAppKitの自動テストに加え、ShellCheck、shfmt、plist検証を実行します。
+AppKitのテストではウィンドウを表示せず、実際の文書・表・テキスト編集コンポーネントを使います。
+
+主なテスト対象は次のとおりです。
+
+- 文書の保存・再読込と固定ID・表示設定の保持
+- セルリンクの解析、行列の変更後の参照、文書の移動・改名
+- CSV・TSV・Markdownの変換とセル内の改行・特殊文字
+- 行列の編集、Undo / Redo、編集中の保存
+- 折り返し表示、列幅変更、日本語の変換中テキストのキー処理
+
+実際の日本語IMEでの候補選択や連続入力、長時間編集の使い勝手は、自動テストだけでは確認できないため手動での検証が必要です。
