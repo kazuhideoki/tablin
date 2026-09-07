@@ -39,6 +39,7 @@ final class TablinDocument: NSDocument {
     body(&next)
     guard next != old else { return }
     model = next
+    tableController?.retainUnusedGrowth()
     undoManager?.registerUndo(withTarget: self) { target in target.restore(old, name: name) }
     undoManager?.setActionName(name)
     updateChangeCount(.changeDone)

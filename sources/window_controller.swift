@@ -16,6 +16,8 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
   private var resizing = false
   private var rowHeights: [Int: CGFloat] = [:]
   private var pendingLinkCell: (row: UUID, column: UUID)?
+  private var automaticRows: Set<UUID> = []
+  private var automaticColumns: Set<UUID> = []
   var columnOffset: Int { doc.model.showsRowNumbers ? 1 : 0 }
   var selection: (rows: ClosedRange<Int>, columns: ClosedRange<Int>) {
     (
@@ -94,6 +96,7 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
     window?.makeFirstResponder(table)
   }
   func reload() {
+    retainUnusedGrowth()
     resizing = true
     rowHeights.removeAll()
     table.delegate = nil
@@ -216,6 +219,7 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
       anchorRow = selectedRow
       anchorColumn = selectedColumn
     }
+    removeUnusedGrowth()
     table.scrollRowToVisible(selectedRow)
     table.scrollColumnToVisible(selectedColumn + columnOffset)
     table.selectRowIndexes(IndexSet(integer: selectedRow), byExtendingSelection: false)
@@ -233,13 +237,52 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
     // One-cell growth keeps keyboard entry continuous, without pre-sizing a sheet.
     if row >= doc.model.rows.count || column >= doc.model.columns.count {
       doc.change("Grow Table") { model in
-        if row >= model.rows.count { model.insertRow(at: model.rows.count) }
-        if column >= model.columns.count { model.insertColumn(at: model.columns.count) }
+        if row >= model.rows.count {
+          model.insertRow(at: model.rows.count)
+          automaticRows.insert(model.rows.last!.id)
+        }
+        if column >= model.columns.count {
+          model.insertColumn(at: model.columns.count)
+          automaticColumns.insert(model.columns.last!.id)
+        }
       }
       reload()
     }
     select(row: row, column: column, extend: extend)
     window?.makeFirstResponder(table)
+  }
+  // Once content is committed, an automatically added edge becomes an ordinary edge.
+  func retainUnusedGrowth() {
+    automaticRows.formIntersection(
+      doc.model.rows.filter { $0.cells.allSatisfy(\.isEmpty) }.map(\.id))
+    automaticColumns.formIntersection(
+      doc.model.columns.indices.filter { c in
+        doc.model.rows.allSatisfy { $0.cells[c].isEmpty }
+      }.map { doc.model.columns[$0].id })
+  }
+  private func removeUnusedGrowth() {
+    retainUnusedGrowth()
+    let range = selection
+    let oldRowCount = doc.model.rows.count
+    let oldColumnCount = doc.model.columns.count
+    doc.change("Remove Unused Growth") { model in
+      while model.rows.count - 1 > range.rows.upperBound,
+        automaticRows.contains(model.rows.last!.id)
+      {
+        model.removeRow(at: model.rows.count - 1)
+      }
+      while model.columns.count - 1 > range.columns.upperBound,
+        automaticColumns.contains(model.columns.last!.id)
+      {
+        model.removeColumn(at: model.columns.count - 1)
+      }
+    }
+    if oldRowCount != doc.model.rows.count || oldColumnCount != doc.model.columns.count {
+      let anchor = (anchorRow, anchorColumn)
+      reload()
+      anchorRow = anchor.0
+      anchorColumn = anchor.1
+    }
   }
   func beginEditing(replace: Bool = false) {
     finishEditing()
