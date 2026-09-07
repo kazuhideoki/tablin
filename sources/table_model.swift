@@ -1,5 +1,13 @@
 import Foundation
 
+// Command-line tests have no app bundle; production and dev apps use their registered scheme.
+let tablinURLScheme: String = {
+  guard let types = Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]],
+    let schemes = types.first?["CFBundleURLSchemes"] as? [String], let scheme = schemes.first
+  else { return "tablin" }
+  return scheme
+}()
+
 struct TableColumn: Codable, Equatable {
   var id = UUID()
   var width: Double = 180
@@ -65,7 +73,7 @@ struct TableModel: Codable, Equatable {
   }
   func link(file: URL, row: Int, column: Int) -> URL {
     var parts = URLComponents()
-    parts.scheme = "tablin"
+    parts.scheme = tablinURLScheme
     parts.host = "open"
     parts.queryItems = [
       URLQueryItem(name: "document", value: id.uuidString),
@@ -89,7 +97,7 @@ struct CellLink {
   let column: UUID
   let path: String
   init(_ url: URL) throws {
-    guard url.scheme == "tablin", url.host == "open",
+    guard url.scheme == tablinURLScheme, url.host == "open",
       let parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
     else { throw TableError.invalidLink }
     let items = parts.queryItems ?? []

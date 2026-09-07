@@ -1,15 +1,24 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")"
-mkdir -p .build/module_cache
-swiftc -swift-version 5 -O -target "$(uname -m)-apple-macosx13.0" -module-cache-path .build/module_cache \
+suffix=$(printf '%s' "$(pwd -P)" | shasum -a 256 | cut -c1-12)
+cache=".build/test_module_cache/$suffix"
+mkdir -p "$cache"
+swiftc -swift-version 5 -O -target "$(uname -m)-apple-macosx13.0" -module-cache-path "$cache" \
 	sources/table_model.swift tests/model_tests.swift -o .build/model_tests
 .build/model_tests
-swiftc -swift-version 5 -O -target "$(uname -m)-apple-macosx13.0" -module-cache-path .build/module_cache \
+# Exercise Bundle.main metadata as well as the unbundled production-scheme default.
+cp info.plist .build/test-info.plist
+plutil -replace CFBundleURLTypes.0.CFBundleURLSchemes.0 -string tablin-dev-test .build/test-info.plist
+swiftc -swift-version 5 -O -target "$(uname -m)-apple-macosx13.0" -module-cache-path "$cache" \
+	-Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker .build/test-info.plist \
+	sources/table_model.swift tests/model_tests.swift -o .build/dev_model_tests
+TABLIN_EXPECTED_SCHEME=tablin-dev-test .build/dev_model_tests
+swiftc -swift-version 5 -O -target "$(uname -m)-apple-macosx13.0" -module-cache-path "$cache" \
 	-framework AppKit -framework UniformTypeIdentifiers \
 	sources/table_model.swift sources/document.swift sources/table_view.swift \
 	sources/window_controller.swift tests/appkit_tests.swift -o .build/appkit_tests
 .build/appkit_tests
-shellcheck build test
-shfmt -d build test
+shellcheck build dev test
+shfmt -d build dev test
 plutil -lint info.plist

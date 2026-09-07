@@ -1,10 +1,42 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")"
-mkdir -p .build/Tablin.app/Contents/MacOS .build/module_cache
-swiftc -swift-version 5 -O -target "$(uname -m)-apple-macosx13.0" -module-cache-path .build/module_cache \
+mode="${1:-release}"
+suffix=$(printf '%s' "$(pwd -P)" | shasum -a 256 | cut -c1-12)
+case "$mode" in
+release)
+	app_name=Tablin
+	build_dir=.build
+	binary=tablin
+	;;
+--dev)
+	app_name="Tablin Dev $suffix"
+	build_dir=.build/dev
+	binary="tablin-dev-$suffix"
+	;;
+*)
+	printf 'Usage: %s [--dev]\n' "$0" >&2
+	exit 2
+	;;
+esac
+app="$build_dir/$app_name.app"
+mkdir -p "$app/Contents/MacOS" "$build_dir/module_cache/$suffix"
+swiftc -swift-version 5 -O -target "$(uname -m)-apple-macosx13.0" -module-cache-path "$build_dir/module_cache/$suffix" \
 	-framework AppKit -framework UniformTypeIdentifiers \
-	sources/*.swift -o .build/Tablin.app/Contents/MacOS/tablin
-cp info.plist .build/Tablin.app/Contents/Info.plist
-codesign --force --sign - .build/Tablin.app
-printf '%s\n' "$PWD/.build/Tablin.app"
+	sources/*.swift -o "$app/Contents/MacOS/$binary"
+cp info.plist "$app/Contents/Info.plist"
+if [[ "$mode" == --dev ]]; then
+	plist="$app/Contents/Info.plist"
+	plutil -replace CFBundleName -string "$app_name" "$plist"
+	plutil -replace CFBundleDisplayName -string "$app_name" "$plist"
+	plutil -replace CFBundleIdentifier -string "com.kazuhideoki.tablin.dev.$suffix" "$plist"
+	plutil -replace CFBundleExecutable -string "$binary" "$plist"
+	plutil -replace CFBundleURLTypes.0.CFBundleURLName -string "$app_name Cell" "$plist"
+	plutil -replace CFBundleURLTypes.0.CFBundleURLSchemes.0 -string "tablin-dev-$suffix" "$plist"
+	# Open shared documents explicitly without claiming the default file association.
+	plutil -replace CFBundleDocumentTypes.0.LSHandlerRank -string None "$plist"
+	plutil -insert UTImportedTypeDeclarations -xml "$(plutil -extract UTExportedTypeDeclarations xml1 -o - "$plist")" "$plist"
+	plutil -remove UTExportedTypeDeclarations "$plist"
+fi
+codesign --force --sign - "$app"
+printf '%s\n' "$PWD/$app"

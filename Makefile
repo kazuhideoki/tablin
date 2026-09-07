@@ -4,10 +4,16 @@ SHELL := /bin/bash
 INSTALL_DIR ?= $(HOME)/Applications
 APP_BUNDLE := .build/Tablin.app
 
-.PHONY: build test install run
+.PHONY: build dev build-dev test install run
 
 build:
 	./build
+
+build-dev:
+	./build --dev
+
+dev:
+	./dev
 
 test:
 	./test
