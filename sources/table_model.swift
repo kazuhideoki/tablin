@@ -23,10 +23,10 @@ struct TableModel: Codable, Equatable {
   var columns: [TableColumn]
   var rows: [TableRow]
   var wraps = false
-  var showsRowNumbers = false
+  var showsRowNumbers = true
   var fontSize: Double = 13
 
-  init(matrix: [[String]] = [["", "", ""], ["", "", ""], ["", "", ""]]) {
+  init(matrix: [[String]] = [["", ""], ["", ""]]) {
     let count = max(1, matrix.map(\.count).max() ?? 1)
     columns = (0..<count).map { _ in TableColumn() }
     rows = (matrix.isEmpty ? [[""]] : matrix).map {
