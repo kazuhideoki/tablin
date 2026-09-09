@@ -5,6 +5,7 @@ import AppKit
     _ = NSApplication.shared
     let document = TablinDocument()
     document.model = TableModel(matrix: [["H1", "H2"], ["a", "b"], ["c", "d"]])
+    document.model.showsRowNumbers = false
     document.makeWindowControllers()
     let controller = document.tableController!
     let undo = document.undoManager!
