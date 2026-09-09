@@ -78,6 +78,20 @@ final class GridTableView: NSTableView {
       }
       return
     }
+    if event.modifierFlags.contains(.control), !option, !command {
+      let direction: (dx: Int, dy: Int)?
+      switch event.charactersIgnoringModifiers?.lowercased() {
+      case "f": direction = (1, 0)
+      case "b": direction = (-1, 0)
+      case "n": direction = (0, 1)
+      case "p": direction = (0, -1)
+      default: direction = nil
+      }
+      if let direction {
+        owner.move(dx: direction.dx, dy: direction.dy, extend: shift)
+        return
+      }
+    }
     switch event.keyCode {
     case 123, 124, 125, 126:
       if option {
