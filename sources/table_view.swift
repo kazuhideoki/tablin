@@ -108,7 +108,11 @@ final class GridTableView: NSTableView {
       }
     case 48: owner.move(dx: shift ? -1 : 1, dy: 0)
     case 36, 76:
-      if !option { owner.move(dx: 0, dy: shift ? -1 : 1) }
+      if event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command {
+        owner.move(dx: 1, dy: 0)
+      } else if !option {
+        owner.move(dx: 0, dy: shift ? -1 : 1)
+      }
     case 51, 117: owner.clearCells(nil)
     case 53: owner.select(row: owner.selectedRow, column: owner.selectedColumn)
     default:
@@ -189,6 +193,13 @@ final class CellTextView: NSTextView {
   override var undoManager: UndoManager? { editingUndoManager }
   weak var owner: TableWindowController?
   override func keyDown(with event: NSEvent) {
+    if !hasMarkedText(),
+      event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command,
+      [36, 76].contains(event.keyCode)
+    {
+      owner?.move(dx: 1, dy: 0)
+      return
+    }
     if !hasMarkedText(), event.modifierFlags.contains(.option), [36, 76].contains(event.keyCode) {
       insertText("\n", replacementRange: selectedRange())
       return

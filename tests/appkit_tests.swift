@@ -143,8 +143,45 @@ import AppKit
     print("PASS column resizing recalculates wrapped row height")
     try checkAutomaticGrowth()
     checkControlNavigation()
+    checkCommandReturn()
     document.close()
-    print("17 AppKit checks passed")
+    print("18 AppKit checks passed")
+  }
+
+  static func checkCommandReturn() {
+    let document = TablinDocument()
+    document.model = TableModel(matrix: [["A", "B"], ["a", "b"]])
+    document.makeWindowControllers()
+    defer { document.close() }
+    let controller = document.tableController!
+    document.undoManager!.groupsByEvent = false
+    document.undoManager!.beginUndoGrouping()
+    defer { document.undoManager!.endUndoGrouping() }
+    for keyCode: UInt16 in [36, 76] {
+      controller.select(row: 1, column: 1)
+      controller.beginEditing()
+      controller.editor!.string = "確定した値"
+      let event = NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: .command,
+        timestamp: 0, windowNumber: controller.window!.windowNumber, context: nil,
+        characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: keyCode)!
+      controller.editor!.keyDown(with: event)
+      precondition(document.model.rows[1].cells[1] == "確定した値")
+      precondition(controller.selectedRow == 1 && controller.selectedColumn == 2)
+      precondition(controller.editor == nil)
+      precondition(controller.window!.firstResponder === controller.table)
+      controller.table.keyDown(with: event)
+      precondition(controller.selectedRow == 1 && controller.selectedColumn == 3)
+      precondition(controller.editor == nil)
+      precondition(document.model.rows[1].cells[1] == "確定した値")
+      let plainReturn = NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: [],
+        timestamp: 0, windowNumber: controller.window!.windowNumber, context: nil,
+        characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: keyCode)!
+      controller.table.keyDown(with: plainReturn)
+      precondition(controller.selectedRow == 2 && controller.selectedColumn == 3)
+    }
+    print("PASS Command Return / keypad Enter moves right while editing or selected; Return moves down")
   }
 
   static func checkControlNavigation() {
