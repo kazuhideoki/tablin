@@ -44,7 +44,7 @@ make run INSTALL_DIR=/Applications
 
 | 操作 | キー・UI |
 | --- | --- |
-| セル移動 | 矢印キー |
+| セル移動 | 矢印キー / Ctrl+F・B・N・P（右・左・下・上、Shift併用で範囲選択） |
 | 右・左へ移動 | Tab / Shift+Tab |
 | 下・上へ移動 | Return / Shift+Return |
 | 行・列の端へ移動 | Command+矢印 |

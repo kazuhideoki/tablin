@@ -142,8 +142,40 @@ import AppKit
     precondition(document.model.columns[0].width == 500)
     print("PASS column resizing recalculates wrapped row height")
     try checkAutomaticGrowth()
+    checkControlNavigation()
     document.close()
-    print("16 AppKit checks passed")
+    print("17 AppKit checks passed")
+  }
+
+  static func checkControlNavigation() {
+    let document = TablinDocument()
+    document.model = TableModel(matrix: [["A", "B", "C"], ["a", "b", "c"], ["d", "e", "f"]])
+    document.makeWindowControllers()
+    defer { document.close() }
+    let controller = document.tableController!
+    let original = document.model
+    func press(_ letter: String, shift: Bool = false) {
+      let event = NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: shift ? [.control, .shift] : [.control],
+        timestamp: 0, windowNumber: controller.window!.windowNumber, context: nil,
+        characters: letter, charactersIgnoringModifiers: letter, isARepeat: false, keyCode: 0)!
+      controller.table.keyDown(with: event)
+    }
+    controller.select(row: 1, column: 1)
+    for (letter, row, column) in [("f", 1, 2), ("b", 1, 1), ("n", 2, 1), ("p", 1, 1)] {
+      press(letter)
+      precondition(controller.selectedRow == row && controller.selectedColumn == column)
+      precondition(controller.editor == nil)
+    }
+    press("F", shift: true)
+    press("N", shift: true)
+    precondition(controller.selection.rows == 1...2 && controller.selection.columns == 1...2)
+    controller.select(row: 0, column: 0)
+    press("b")
+    press("p")
+    precondition(controller.selectedRow == 0 && controller.selectedColumn == 0)
+    precondition(document.model == original)
+    print("PASS Control F/B/N/P navigation / Shift selection / top-left boundary")
   }
 
   static func checkAutomaticGrowth() throws {
