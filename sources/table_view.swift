@@ -68,6 +68,16 @@ final class GridTableView: NSTableView {
     let option = event.modifierFlags.contains(.option)
     let shift = event.modifierFlags.contains(.shift)
     let command = event.modifierFlags.contains(.command)
+    if event.modifierFlags.intersection([.control, .command, .option, .shift]) == .control,
+      let key = event.charactersIgnoringModifiers?.lowercased(), ["a", "e"].contains(key)
+    {
+      owner.beginEditing()
+      if let editor = owner.editor {
+        if key == "a" { editor.setSelectedRange(NSRange(location: 0, length: 0)) }
+        editor.scrollRangeToVisible(editor.selectedRange())
+      }
+      return
+    }
     switch event.keyCode {
     case 123, 124, 125, 126:
       if option {
@@ -84,7 +94,7 @@ final class GridTableView: NSTableView {
       }
     case 48: owner.move(dx: shift ? -1 : 1, dy: 0)
     case 36, 76:
-      if option { owner.beginEditing() } else { owner.move(dx: 0, dy: shift ? -1 : 1) }
+      if !option { owner.move(dx: 0, dy: shift ? -1 : 1) }
     case 51, 117: owner.clearCells(nil)
     case 53: owner.select(row: owner.selectedRow, column: owner.selectedColumn)
     default:

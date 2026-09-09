@@ -407,7 +407,7 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
       message
       ?? "\(columnName(selectedColumn))\(selectedRow)  ·  \(doc.model.rows.count - 1) rows × \(doc.model.columns.count) columns   ·   "
       + (editor == nil
-        ? "⌥↩ Edit    ⇥ Next cell    ⌘⌥C Copy cell link"
+        ? "⌃A Edit at start    ⌃E Edit at end    ⇥ Next cell    ⌘⌥C Copy cell link"
         : "⌥↩ Line break    ⇥ Next cell    Esc Cancel")
   }
   private func mutate(_ name: String, _ body: (inout TableModel) -> Void) {
