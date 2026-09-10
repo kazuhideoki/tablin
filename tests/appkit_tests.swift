@@ -56,6 +56,21 @@ import AppKit
     precondition(cancelled.rows[1].cells[0] == original)
     undo.endUndoGrouping()
     print("PASS saving draft keeps editor alive; cancel restores original")
+    // Legacy scrollers must not consume the single-line editing viewport.
+    controller.beginEditing()
+    let input = controller.editor!
+    let inputScroll = input.enclosingScrollView!
+    inputScroll.scrollerStyle = .legacy
+    input.insertText(String(repeating: "日本語入力", count: 30), replacementRange: input.selectedRange())
+    input.sizeToFit()
+    inputScroll.tile()
+    input.scrollRangeToVisible(NSRange(location: (input.string as NSString).length, length: 0))
+    let lineHeight = input.layoutManager!.defaultLineHeight(for: input.font!)
+    print("Editing viewport: \(inputScroll.contentSize.height), line: \(lineHeight)")
+    precondition(inputScroll.contentSize.height >= lineHeight + 2 * input.textContainerInset.height)
+    precondition(input.visibleRect.maxX >= input.frame.width - 1)
+    controller.cancelEditing()
+    print("PASS single-line editor keeps text visible and scrolls to long input with legacy style")
     undo.beginUndoGrouping()
     controller.toggleWrap(nil)
     controller.toggleRowNumbers(nil)
@@ -145,7 +160,7 @@ import AppKit
     checkControlNavigation()
     checkCommandReturn()
     document.close()
-    print("18 AppKit checks passed")
+    print("19 AppKit checks passed")
   }
 
   static func checkCommandReturn() {

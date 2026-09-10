@@ -293,9 +293,10 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
     let frame = table.frameOfCell(atColumn: editColumn + columnOffset, row: editRow)
     let container = NSScrollView(frame: frame.insetBy(dx: 1, dy: 1))
     container.borderType = .noBorder
-    container.hasVerticalScroller = true
-    container.autohidesScrollers = true
-    container.hasHorizontalScroller = !doc.model.wraps
+    // Scroller chrome can consume almost all of a single-line cell. Keep the
+    // clip view scrollable (including caret tracking) without drawing scrollers.
+    container.hasVerticalScroller = false
+    container.hasHorizontalScroller = false
     let text = CellTextView(frame: NSRect(origin: .zero, size: container.contentSize))
     text.owner = self
     text.delegate = self
