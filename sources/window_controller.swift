@@ -6,7 +6,7 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
 {
   let doc: TablinDocument
   let table = GridTableView()
-  let scroll = NSScrollView()
+  let scroll = GridScrollView()
   let status = NSTextField(labelWithString: "")
   var editor: CellTextView?
   private var editorScroll: NSScrollView?
@@ -56,7 +56,8 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
     table.owner = self
     table.dataSource = self
     table.delegate = self
-    table.headerView = nil
+    table.headerView = NSTableHeaderView(frame: NSRect(x: 0, y: 0, width: 0, height: 24))
+    table.allowsColumnReordering = false
     table.selectionHighlightStyle = .none
     table.usesAutomaticRowHeights = false
     table.gridStyleMask = []
@@ -104,13 +105,16 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
     for column in table.tableColumns { table.removeTableColumn(column) }
     if columnOffset == 1 {
       let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("numbers"))
+      column.title = ""
       column.width = 42
       column.minWidth = 42
       column.maxWidth = 42
       table.addTableColumn(column)
     }
-    for value in doc.model.columns {
+    for (index, value) in doc.model.columns.enumerated() {
       let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(value.id.uuidString))
+      column.title = columnName(index)
+      column.headerCell.alignment = .center
       column.width = value.width
       column.minWidth = 60
       column.maxWidth = 2000
