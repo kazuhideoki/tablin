@@ -158,6 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     item(
       edit, "Copy Table as Markdown", #selector(TableWindowController.copyMarkdown(_:)), "c",
       [.command, .shift])
+    item(edit, "Copy Table as CSV", #selector(TableWindowController.copyCSV(_:)))
     let table = menu("Table")
     item(table, "Insert Column Before", #selector(TableWindowController.columnBefore(_:)))
     item(table, "Insert Column After", #selector(TableWindowController.columnAfter(_:)))
