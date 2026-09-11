@@ -1,5 +1,26 @@
 import AppKit
 
+// AppKit magnifies the document view but leaves the table header clip unscaled.
+final class GridScrollView: NSScrollView {
+  override var magnification: CGFloat {
+    didSet { tile() }
+  }
+  override func tile() {
+    if let header = (documentView as? NSTableView)?.headerView {
+      header.setFrameSize(NSSize(width: header.frame.width, height: 24 * magnification))
+    }
+    super.tile()
+    guard let table = documentView as? NSTableView,
+      let header = table.headerView, let clip = header.superview as? NSClipView,
+      clip.frame.height > 0
+    else { return }
+    clip.setBoundsSize(NSSize(
+      width: clip.frame.width / magnification, height: clip.frame.height / magnification))
+    header.setFrameSize(NSSize(width: table.frame.width, height: clip.bounds.height))
+    clip.scroll(to: NSPoint(x: contentView.bounds.minX, y: 0))
+  }
+}
+
 final class GridRowView: NSTableRowView {
   override func drawSelection(in dirtyRect: NSRect) {}
   override var isEmphasized: Bool {

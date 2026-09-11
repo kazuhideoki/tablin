@@ -377,5 +377,54 @@ import AppKit
     precondition(saved == document.model)
     undo.endUndoGrouping()
     print("PASS explicitly appended empty rows and columns remain and serialize")
+
+    let labelsDocument = TablinDocument()
+    labelsDocument.model = TableModel(matrix: [Array(repeating: "heading", count: 28)])
+    labelsDocument.makeWindowControllers()
+    let labels = labelsDocument.tableController!
+    let beforeLabels = labelsDocument.model
+    precondition(labels.table.headerView != nil)
+    precondition(!labels.table.allowsColumnReordering)
+    precondition(labels.table.tableColumns[0].title.isEmpty)
+    precondition(labels.table.tableColumns[1].title == "A")
+    precondition(labels.table.tableColumns[26].title == "Z")
+    precondition(labels.table.tableColumns[27].title == "AA")
+    precondition(labels.table.tableColumns[28].title == "AB")
+    precondition(labelsDocument.model == beforeLabels)
+    labels.window?.contentView?.layoutSubtreeIfNeeded()
+    func checkHeaderGeometry() {
+      let header = labels.table.headerView!
+      precondition(header.visibleRect.height > 0)
+      for column in labels.table.tableColumns.indices {
+        let headerRect = header.convert(header.headerRect(ofColumn: column), to: nil)
+        let cellRect = labels.table.convert(labels.table.rect(ofColumn: column), to: nil)
+        precondition(abs(headerRect.minX - cellRect.minX) < 1)
+        precondition(abs(headerRect.width - cellRect.width) < 1)
+      }
+    }
+    for scale: CGFloat in [0.5, 1.1, 2, 3] {
+      labels.scroll.magnification = scale
+      for column in [0, 14, 28, 0] {
+        labels.table.scrollColumnToVisible(column)
+        checkHeaderGeometry()
+      }
+      for width: CGFloat in [640, 1060] {
+        labels.window?.setContentSize(NSSize(width: width, height: 640))
+        labels.window?.contentView?.layoutSubtreeIfNeeded()
+        checkHeaderGeometry()
+      }
+    }
+    let linkedColumn = labelsDocument.model.columns[0].id
+    labelsDocument.model.insertColumn(at: 0)
+    labelsDocument.model.showsRowNumbers = false
+    labels.reload()
+    labels.window?.contentView?.layoutSubtreeIfNeeded()
+    checkHeaderGeometry()
+    precondition(labels.table.tableColumns[0].title == "A")
+    precondition(labels.table.tableColumns[1].title == "B")
+    precondition(labels.table.tableColumns[1].identifier.rawValue == linkedColumn.uuidString)
+    precondition(labelsDocument.model.rows[0].cells[1] == "heading")
+    print("PASS column labels / Z-AA boundary / row-number offset / stable identity after insertion")
+
   }
 }
