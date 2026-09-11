@@ -64,6 +64,7 @@ make run INSTALL_DIR=/Applications
 | 行を削除 | セル選択中に Option+Backspace（⌥⌫）、Remove Row |
 | 列を削除 | セル選択中に Option+Shift+Backspace（⌥⇧⌫）、Remove Col |
 | コピー・切り取り・貼り付け | Command+C / X / V |
+| 太字 / 斜体 / 下線 | Formatメニュー、Command+B / I / U |
 | Undo / Redo | Command+Z / Command+Shift+Z |
 | 折り返し切り替え | Wrap、Command+Option+W |
 | 表の拡大・縮小 | Command++ / Command+-、ピンチ。フォーカス中のセルが見えるようにスクロール |
@@ -75,6 +76,9 @@ make run INSTALL_DIR=/Applications
 | 列の文字揃え | ツールバーのLeft / Center / Right |
 
 検索は見出しを含み、大文字・小文字を区別しません。左から右、上から下へ一致箇所ごとに移動し、末尾から先頭へ循環します。現在の一致はオレンジ、他の一致は黄色で表示します。長いセルでは一致文字が見える位置までセル内をスクロールします。検索欄へ戻ると編集中のセルを確定し、日本語変換中のReturnは検索移動に使いません。
+
+文字装飾は、セル選択中は選択セル全体、編集中は選択した文字に適用します。編集中に文字を選択していない場合は、これから入力する文字の装飾を切り替えます。複数の装飾を組み合わせられます。
+装飾は `.tablin` の保存とTablin内でのセルコピーに含まれます。CSV・TSV・Markdownへの書き出しは文字のみです。
 
 0行目は見出しです。見出しも通常のセルと同じ方法で編集できます。
 右端・下端を越える移動では行・列を追加します。空の行・列も保存され、末尾の不要な空白はPruneで取り除けます。

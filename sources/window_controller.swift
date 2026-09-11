@@ -215,9 +215,12 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
     field.cell?.wraps = doc.model.wraps
     field.cell?.isScrollable = false
     field.alignment = c < 0 ? .right : alignment(c)
-    if c >= 0 && !searchBar.isHidden {
-      field.attributedStringValue = highlightedText(
-        field.attributedStringValue, row: row, column: c)
+    if c >= 0 {
+      field.attributedStringValue = attributedCell(row: row, column: c)
+      if !searchBar.isHidden {
+        field.attributedStringValue = highlightedText(
+          field.attributedStringValue, row: row, column: c)
+      }
     }
     field.setAccessibilityLabel(
       c < 0 ? "Row \(row)" : "\(columnName(c))\(row): \(field.stringValue)")
@@ -359,17 +362,7 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
       return
     }
     let match = searchMatches[searchIndex]
-    let style = NSMutableParagraphStyle()
-    style.alignment = alignment(match.column)
-    let text = NSAttributedString(
-      string: doc.model.rows[match.row].cells[match.column],
-      attributes: [
-        .font: match.row == 0
-          ? NSFont.boldSystemFont(ofSize: doc.model.fontSize)
-          : NSFont.systemFont(ofSize: doc.model.fontSize),
-        .foregroundColor: NSColor.labelColor,
-        .paragraphStyle: style,
-      ])
+    let text = attributedCell(row: match.row, column: match.column)
     let frame = table.frameOfCell(atColumn: match.column + columnOffset, row: match.row).insetBy(
       dx: 1, dy: 1)
     let overlay = SearchMatchScrollView(
@@ -396,11 +389,10 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
       : NSFont.systemFont(ofSize: doc.model.fontSize)
     var height: CGFloat = ceil(font.ascender - font.descender + font.leading) + 8
     for c in doc.model.columns.indices {
-      let text = doc.model.rows[row].cells[c]
       let width = doc.model.wraps ? max(40, doc.model.columns[c].width - 12) : 1_000_000
-      let rect = (text as NSString).boundingRect(
+      let rect = attributedCell(row: row, column: c).boundingRect(
         with: NSSize(width: width, height: 100000),
-        options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: [.font: font])
+        options: [.usesLineFragmentOrigin, .usesFontLeading])
       height = max(height, ceil(rect.height) + 9)
     }
     // Very long cells remain editable in the cell's scrollable text editor.
@@ -463,10 +455,12 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
   // Once content is committed, an automatically added edge becomes an ordinary edge.
   func retainUnusedGrowth() {
     automaticRows.formIntersection(
-      doc.model.rows.filter { $0.cells.allSatisfy(\.isEmpty) }.map(\.id))
+      doc.model.rows.filter {
+        $0.cells.allSatisfy(\.isEmpty) && ($0.formats ?? [:]).values.allSatisfy(\.isEmpty)
+      }.map(\.id))
     automaticColumns.formIntersection(
       doc.model.columns.indices.filter { c in
-        doc.model.rows.allSatisfy { $0.cells[c].isEmpty }
+        doc.model.rows.allSatisfy { $0.cells[c].isEmpty && ($0.formats?[c] ?? []).isEmpty }
       }.map { doc.model.columns[$0].id })
   }
   private func removeUnusedGrowth() {
@@ -511,7 +505,7 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
     let text = CellTextView(frame: NSRect(origin: .zero, size: container.contentSize))
     text.owner = self
     text.delegate = self
-    text.isRichText = false
+    text.isRichText = true
     text.importsGraphics = false
     text.font = .systemFont(ofSize: doc.model.fontSize)
     text.textColor = .labelColor
@@ -529,7 +523,14 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
     text.isAutomaticQuoteSubstitutionEnabled = false
     text.isAutomaticDashSubstitutionEnabled = false
     text.allowsUndo = true
-    text.string = replace ? "" : doc.model.rows[editRow].cells[editColumn]
+    text.textStorage?.setAttributedString(
+      replace ? NSAttributedString(string: "") : attributedCell(row: editRow, column: editColumn))
+    if text.string.isEmpty {
+      text.typingAttributes.merge(
+        Self.attributes(
+          style: emptyCellStyle(row: editRow, column: editColumn), size: doc.model.fontSize)
+      ) { _, new in new }
+    }
     text.setAccessibilityLabel("Edit \(columnName(editColumn))\(editRow)")
     container.documentView = text
     table.addSubview(container)
@@ -541,16 +542,17 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
   }
   func modelForSaving() -> TableModel {
     var snapshot = doc.model
-    if let editor { snapshot.rows[editRow].cells[editColumn] = editor.string }
+    if let editor { storeEditor(editor, in: &snapshot) }
     return snapshot
   }
   func finishEditing(returnFocusToTable: Bool = true) {
     guard let editor else { return }
     // Commit marked text before ending an edit explicitly through mouse/menu actions.
     editor.unmarkText()
-    let value = editor.string
+    var snapshot = doc.model
+    storeEditor(editor, in: &snapshot)
     self.editor = nil
-    doc.change("Edit Cell") { $0.rows[editRow].cells[editColumn] = value }
+    doc.change("Edit Cell") { $0.rows[editRow] = snapshot.rows[editRow] }
     editorScroll?.removeFromSuperview()
     editorScroll = nil
     rebuildSearch()
@@ -565,7 +567,7 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
     updateStatus()
   }
   func cancelEditing() {
-    if let editor, editor.string != doc.model.rows[editRow].cells[editColumn] {
+    if editor != nil && modelForSaving() != doc.model {
       // An autosave may already contain the draft; cancellation must save the original again.
       doc.updateChangeCount(.changeDone)
     }
@@ -658,6 +660,142 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
   @objc func removeColumn(_ sender: Any?) {
     mutate("Remove Column") { $0.removeColumn(at: selectedColumn) }
   }
+  func attributedCell(row: Int, column: Int) -> NSAttributedString {
+    let paragraph = NSMutableParagraphStyle()
+    paragraph.alignment = alignment(column)
+    paragraph.lineBreakMode = doc.model.wraps ? .byWordWrapping : .byClipping
+    let value = NSMutableAttributedString(
+      string: doc.model.rows[row].cells[column],
+      attributes: [
+        .font: row == 0 && doc.model.rows[row].formats?[column] == nil
+          ? NSFont.boldSystemFont(ofSize: doc.model.fontSize)
+          : NSFont.systemFont(ofSize: doc.model.fontSize), .foregroundColor: NSColor.labelColor,
+        .paragraphStyle: paragraph,
+      ])
+    for run in doc.model.rows[row].formats?[column] ?? [] {
+      value.addAttributes(
+        Self.attributes(style: run.style, size: doc.model.fontSize),
+        range: NSRange(location: run.location, length: run.length))
+    }
+    return value
+  }
+  static func attributes(style: Int, size: CGFloat) -> [NSAttributedString.Key: Any] {
+    var traits: NSFontTraitMask = []
+    if style & 1 != 0 { traits.insert(.boldFontMask) }
+    if style & 2 != 0 { traits.insert(.italicFontMask) }
+    return [
+      .font: NSFontManager.shared.convert(NSFont.systemFont(ofSize: size), toHaveTrait: traits),
+      .underlineStyle: style & 4 != 0 ? 1 : 0,
+    ]
+  }
+  static func style(_ attributes: [NSAttributedString.Key: Any]) -> Int {
+    let traits = NSFontManager.shared.traits(
+      of: attributes[.font] as? NSFont ?? .systemFont(ofSize: 13))
+    return (traits.contains(.boldFontMask) ? 1 : 0) | (traits.contains(.italicFontMask) ? 2 : 0)
+      | ((attributes[.underlineStyle] as? Int ?? 0) != 0 ? 4 : 0)
+  }
+  private func emptyCellStyle(row: Int, column: Int) -> Int {
+    if let runs = doc.model.rows[row].formats?[column] { return runs.first?.style ?? 0 }
+    return row == 0 ? 1 : 0
+  }
+  private func cellRuns(row: Int, column: Int) -> [TextRun] {
+    Self.runs(
+      attributedCell(row: row, column: column), emptyStyle: emptyCellStyle(row: row, column: column)
+    )
+  }
+  private func storeEditor(_ editor: NSTextView, in model: inout TableModel) {
+    let runs = Self.runs(editor.attributedString(), emptyStyle: Self.style(editor.typingAttributes))
+    // Keep implicit defaults intact when neither text nor its effective formatting changed.
+    guard
+      editor.string != doc.model.rows[editRow].cells[editColumn]
+        || runs != cellRuns(row: editRow, column: editColumn)
+    else { return }
+    model.rows[editRow].cells[editColumn] = editor.string
+    model.rows[editRow].formats = model.rows[editRow].formats ?? [:]
+    model.rows[editRow].formats?[editColumn] = runs
+  }
+  static func runs(_ value: NSAttributedString, emptyStyle: Int = 0) -> [TextRun] {
+    if value.length == 0 {
+      return emptyStyle == 0 ? [] : [TextRun(location: 0, length: 0, style: emptyStyle)]
+    }
+    var result: [TextRun] = []
+    value.enumerateAttributes(in: NSRange(location: 0, length: value.length)) {
+      attributes, range, _ in
+      let style = Self.style(attributes)
+      if style != 0 {
+        if let last = result.last, last.style == style,
+          last.location + last.length == range.location
+        {
+          result[result.count - 1].length += range.length
+        } else {
+          result.append(TextRun(location: range.location, length: range.length, style: style))
+        }
+      }
+    }
+    return result
+  }
+  @objc func boldText(_ sender: Any?) { toggleStyle(1) }
+  @objc func italicText(_ sender: Any?) { toggleStyle(2) }
+  @objc func underlineText(_ sender: Any?) { toggleStyle(4) }
+  func toggleStyle(_ bit: Int) {
+    if let editor {
+      guard !editor.hasMarkedText() else { return }
+      let range = editor.selectedRange()
+      if range.length == 0 {
+        editor.typingAttributes.merge(
+          Self.attributes(
+            style: Self.style(editor.typingAttributes) ^ bit, size: doc.model.fontSize)
+        ) { _, new in new }
+        return
+      }
+      let value = NSMutableAttributedString(
+        attributedString: editor.attributedString().attributedSubstring(from: range))
+      applyStyle(bit, to: value)
+      editor.insertText(value, replacementRange: range)
+      editor.setSelectedRange(range)
+    } else {
+      let range = selection
+      let values = range.rows.map { r in range.columns.map { attributedCell(row: r, column: $0) } }
+      let turnOn = range.rows.contains { r in
+        range.columns.contains { c in
+          let value = attributedCell(row: r, column: c)
+          var missing = value.length == 0 && emptyCellStyle(row: r, column: c) & bit == 0
+          value.enumerateAttributes(in: NSRange(location: 0, length: value.length)) { a, _, _ in
+            if Self.style(a) & bit == 0 { missing = true }
+          }
+          return missing
+        }
+      }
+      doc.change("Format Cells") { model in
+        for (ri, r) in range.rows.enumerated() {
+          for (ci, c) in range.columns.enumerated() {
+            let value = NSMutableAttributedString(attributedString: values[ri][ci])
+            applyStyle(bit, to: value, turnOn: turnOn)
+            model.rows[r].formats = model.rows[r].formats ?? [:]
+            let oldStyle = emptyCellStyle(row: r, column: c)
+            model.rows[r].formats?[c] = Self.runs(
+              value, emptyStyle: turnOn ? oldStyle | bit : oldStyle & ~bit)
+          }
+        }
+      }
+      rowHeights.removeAll()
+      table.reloadData()
+      table.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: range.rows))
+      updateSearchOverlay()
+    }
+  }
+  private func applyStyle(_ bit: Int, to value: NSMutableAttributedString, turnOn: Bool? = nil) {
+    let range = NSRange(location: 0, length: value.length)
+    var missing = false
+    value.enumerateAttributes(in: range) { a, _, _ in if Self.style(a) & bit == 0 { missing = true }
+    }
+    let enable = turnOn ?? missing
+    value.enumerateAttributes(in: range) { a, r, _ in
+      let old = Self.style(a)
+      value.addAttributes(
+        Self.attributes(style: enable ? old | bit : old & ~bit, size: doc.model.fontSize), range: r)
+    }
+  }
   @objc func toggleWrap(_ sender: Any?) { mutate("Wrap Cells") { $0.wraps.toggle() } }
   @objc func toggleRowNumbers(_ sender: Any?) {
     mutate("Row Numbers") { $0.showsRowNumbers.toggle() }
@@ -686,6 +824,7 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
       table.scrollToVisible(overlay.text.convert(overlay.matchRect, to: table))
       return
     }
+
     table.scrollToVisible(
       table.frameOfCell(
         atColumn: selectedColumn + columnOffset, row: selectedRow))
@@ -703,7 +842,12 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
   @objc func clearCells(_ sender: Any?) {
     let range = selection
     mutate("Clear Cells") { model in
-      for r in range.rows { for c in range.columns { model.rows[r].cells[c] = "" } }
+      for r in range.rows {
+        for c in range.columns {
+          model.rows[r].cells[c] = ""
+          model.rows[r].formats?.removeValue(forKey: c)
+        }
+      }
     }
   }
   @objc override func selectAll(_ sender: Any?) {
@@ -718,6 +862,18 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
     let matrix = range.rows.map { r in range.columns.map { doc.model.rows[r].cells[$0] } }
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(TableText.delimited(matrix, separator: "\t"), forType: .string)
+    let formatted = range.rows.map { r in
+      TableRow(
+        cells: range.columns.map { doc.model.rows[r].cells[$0] },
+        formats:
+          Dictionary(
+            uniqueKeysWithValues: range.columns.enumerated().map {
+              ($0.offset, cellRuns(row: r, column: $0.element))
+            }))
+    }
+    if let data = try? JSONEncoder().encode(formatted) {
+      NSPasteboard.general.setData(data, forType: .init("com.kazuhideoki.tablin.formatted-cells"))
+    }
     if let data = try? JSONEncoder().encode(matrix) {
       NSPasteboard.general.setData(data, forType: .init("com.kazuhideoki.tablin.cells"))
     }
@@ -729,6 +885,24 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
   @objc func paste(_ sender: Any?) {
     finishEditing()
     do {
+      if let data = NSPasteboard.general.data(
+        forType: .init("com.kazuhideoki.tablin.formatted-cells"))
+      {
+        let rows = try JSONDecoder().decode([TableRow].self, from: data)
+        var check = TableModel(matrix: rows.map(\.cells))
+        check.rows = rows
+        _ = try check.validated()
+        mutate("Paste Cells") { model in
+          model.paste(rows.map(\.cells), row: selectedRow, column: selectedColumn)
+          for (r, row) in rows.enumerated() {
+            model.rows[selectedRow + r].formats = model.rows[selectedRow + r].formats ?? [:]
+            for c in row.cells.indices {
+              model.rows[selectedRow + r].formats?[selectedColumn + c] = row.formats?[c] ?? []
+            }
+          }
+        }
+        return
+      }
       let matrix: [[String]]
       if let data = NSPasteboard.general.data(forType: .init("com.kazuhideoki.tablin.cells")) {
         matrix = try JSONDecoder().decode([[String]].self, from: data)
