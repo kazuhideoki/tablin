@@ -205,7 +205,7 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
     }
     let c = index - columnOffset
     let field = cell.textField!
-    field.stringValue = c < 0 ? (row == 0 ? "" : String(row)) : doc.model.rows[row].cells[c]
+    field.stringValue = c < 0 ? String(row) : doc.model.rows[row].cells[c]
     field.font =
       row == 0
       ? .boldSystemFont(ofSize: doc.model.fontSize) : .systemFont(ofSize: doc.model.fontSize)
