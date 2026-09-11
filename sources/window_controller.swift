@@ -52,6 +52,7 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
     scroll.allowsMagnification = true
     scroll.minMagnification = 0.5
     scroll.maxMagnification = 3
+    scroll.owner = self
     content.addSubview(scroll)
     table.owner = self
     table.dataSource = self
@@ -461,9 +462,15 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
   }
   @objc func zoomIn(_ sender: Any?) {
     scroll.magnification = min(scroll.maxMagnification, scroll.magnification + 0.1)
+    revealFocusedCell()
   }
   @objc func zoomOut(_ sender: Any?) {
     scroll.magnification = max(scroll.minMagnification, scroll.magnification - 0.1)
+    revealFocusedCell()
+  }
+  func revealFocusedCell() {
+    table.scrollToVisible(table.frameOfCell(
+      atColumn: selectedColumn + columnOffset, row: selectedRow))
   }
   @objc func prune(_ sender: Any?) {
     mutate("Prune Empty Edges") { model in

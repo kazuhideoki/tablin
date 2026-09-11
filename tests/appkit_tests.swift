@@ -114,6 +114,34 @@ import AppKit
     precondition(controller.scroll.magnification == 3)
     controller.scroll.magnification = 1
     print("PASS whole-table zoom / editor scaling / hit testing / limits without document changes")
+    let zoomDocument = TablinDocument()
+    zoomDocument.model = TableModel(matrix: (0..<80).map { row in
+      (0..<16).map { "\(row):\($0)" }
+    })
+    zoomDocument.makeWindowControllers()
+    let zoomController = zoomDocument.tableController!
+    zoomController.window?.contentView?.layoutSubtreeIfNeeded()
+    for showsNumbers in [false, true] {
+      zoomDocument.model.showsRowNumbers = showsNumbers
+      zoomController.reload()
+      for editing in [false, true] {
+        zoomController.scroll.magnification = 1
+        zoomController.select(row: 60, column: 12)
+        if editing { zoomController.beginEditing() }
+        let activeEditor = zoomController.editor
+        for _ in 0..<20 {
+          zoomController.zoomIn(nil)
+          let focused = zoomController.table.frameOfCell(
+            atColumn: 12 + zoomController.columnOffset, row: 60)
+          precondition(zoomController.table.visibleRect.insetBy(dx: -1, dy: -1).contains(focused))
+          precondition(zoomController.selectedRow == 60 && zoomController.selectedColumn == 12)
+          precondition(zoomController.editor === activeEditor)
+        }
+        if editing { zoomController.cancelEditing() }
+      }
+    }
+    zoomController.close()
+    print("PASS zoom keeps distant focused cell visible with row numbers and during editing")
     let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(
       "tablin_bookmark_" + UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -161,7 +189,7 @@ import AppKit
     checkCommandReturn()
     checkDeletionShortcuts()
     document.close()
-    print("20 AppKit checks passed")
+    print("21 AppKit checks passed")
   }
 
   static func checkDeletionShortcuts() {

@@ -2,6 +2,13 @@ import AppKit
 
 // AppKit magnifies the document view but leaves the table header clip unscaled.
 final class GridScrollView: NSScrollView {
+  weak var owner: TableWindowController?
+
+  override func magnify(with event: NSEvent) {
+    super.magnify(with: event)
+    owner?.revealFocusedCell()
+  }
+
   override var magnification: CGFloat {
     didSet { tile() }
   }
