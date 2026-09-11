@@ -65,6 +65,7 @@ make run INSTALL_DIR=/Applications
 | 列幅調整 | 見出し行の列境界をドラッグ |
 | セルリンクをコピー | Copy Link、右クリック、Command+Option+C |
 | 表をMarkdownでコピー | Command+Shift+C |
+| 表をCSVでコピー | Edit → Copy Table as CSV |
 | 行番号・表示倍率 | Viewメニュー |
 | 列の文字揃え | ツールバーのLeft / Center / Right |
 

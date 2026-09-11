@@ -511,6 +511,12 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
       mutate("Paste Cells") { $0.paste(matrix, row: selectedRow, column: selectedColumn) }
     } catch { presentError(error) }
   }
+  @objc func copyCSV(_ sender: Any?) {
+    finishEditing()
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(
+      TableText.delimited(doc.model.rows.map(\.cells)), forType: .string)
+  }
   @objc func copyMarkdown(_ sender: Any?) {
     finishEditing()
     NSPasteboard.general.clearContents()
