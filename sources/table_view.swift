@@ -113,7 +113,16 @@ final class GridTableView: NSTableView {
       } else if !option {
         owner.move(dx: 0, dy: shift ? -1 : 1)
       }
-    case 51, 117: owner.clearCells(nil)
+    case 51:
+      let modifiers = event.modifierFlags.intersection([.control, .command, .option, .shift])
+      if modifiers == .option {
+        owner.removeRow(nil)
+      } else if modifiers == [.option, .shift] {
+        owner.removeColumn(nil)
+      } else {
+        owner.clearCells(nil)
+      }
+    case 117: owner.clearCells(nil)
     case 53: owner.select(row: owner.selectedRow, column: owner.selectedColumn)
     default:
       guard !command, !event.modifierFlags.contains(.control), let string = event.characters,
