@@ -159,8 +159,67 @@ import AppKit
     try checkAutomaticGrowth()
     checkControlNavigation()
     checkCommandReturn()
+    checkDeletionShortcuts()
     document.close()
-    print("19 AppKit checks passed")
+    print("20 AppKit checks passed")
+  }
+
+  static func checkDeletionShortcuts() {
+    let document = TablinDocument()
+    document.model = TableModel(matrix: [["A", "B"], ["a", "b"], ["c", "d"]])
+    document.makeWindowControllers()
+    defer { document.close() }
+    let controller = document.tableController!
+    let undo = document.undoManager!
+    undo.groupsByEvent = false
+    let original = document.model
+    func event(_ flags: NSEvent.ModifierFlags) -> NSEvent {
+      NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: flags,
+        timestamp: 0, windowNumber: controller.window!.windowNumber, context: nil,
+        characters: "\u{7f}", charactersIgnoringModifiers: "\u{7f}", isARepeat: false, keyCode: 51)!
+    }
+    for flags: NSEvent.ModifierFlags in [.option, [.option, .shift], []] {
+      controller.select(row: 2, column: 1)
+      undo.beginUndoGrouping()
+      controller.table.keyDown(with: event(flags))
+      undo.endUndoGrouping()
+      if flags == .option {
+        precondition(document.model.rows.count == 2 && document.model.columns.count == 2)
+        precondition(controller.selectedRow == 1 && controller.selectedColumn == 1)
+      } else if flags.contains(.shift) {
+        precondition(document.model.rows.count == 3 && document.model.columns.count == 1)
+        precondition(controller.selectedRow == 2 && controller.selectedColumn == 0)
+      } else {
+        precondition(document.model.rows.count == 3 && document.model.columns.count == 2)
+        precondition(document.model.rows[2].cells[1].isEmpty)
+      }
+      precondition(controller.window!.firstResponder === controller.table)
+      undo.undo()
+      precondition(document.model == original)
+    }
+    controller.select(row: 0, column: 0)
+    undo.beginUndoGrouping()
+    controller.table.keyDown(with: event(.option))
+    precondition(document.model == original)
+    controller.table.keyDown(with: event([.option, .shift]))
+    let singleColumn = document.model
+    controller.table.keyDown(with: event([.option, .shift]))
+    precondition(document.model == singleColumn)
+    undo.endUndoGrouping()
+    undo.undo()
+    for flags: NSEvent.ModifierFlags in [.option, [.option, .shift]] {
+      controller.select(row: 1, column: 0)
+      controller.beginEditing()
+      let editor = controller.editor!
+      editor.string = "hello world"
+      editor.setSelectedRange(NSRange(location: 11, length: 0))
+      editor.keyDown(with: event(flags))
+      precondition(controller.editor === editor && document.model == original)
+      if flags == .option { precondition(editor.string == "hello ") }
+      controller.cancelEditing()
+    }
+    print("PASS deletion shortcuts / selection / undo / protected edges / text editing")
   }
 
   static func checkCommandReturn() {

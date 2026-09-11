@@ -57,7 +57,8 @@ make run INSTALL_DIR=/Applications
 | 編集を取り消す | Escape |
 | 編集中に隣のセルへ | Tab、左右の文字列端で矢印 |
 | 行・列を挿入 | Option+矢印、ツールバー |
-| 行・列を削除 | Remove Row / Remove Col |
+| 行を削除 | セル選択中に Option+Backspace（⌥⌫）、Remove Row |
+| 列を削除 | セル選択中に Option+Shift+Backspace（⌥⇧⌫）、Remove Col |
 | コピー・切り取り・貼り付け | Command+C / X / V |
 | Undo / Redo | Command+Z / Command+Shift+Z |
 | 折り返し切り替え | Wrap、Command+Option+W |
