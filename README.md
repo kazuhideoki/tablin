@@ -63,6 +63,7 @@ make run INSTALL_DIR=/Applications
 | コピー・切り取り・貼り付け | Command+C / X / V |
 | Undo / Redo | Command+Z / Command+Shift+Z |
 | 折り返し切り替え | Wrap、Command+Option+W |
+| 表の拡大・縮小 | Command++ / Command+-、ピンチ。フォーカス中のセルが見えるようにスクロール |
 | 列幅調整 | 見出し行の列境界をドラッグ |
 | セルリンクをコピー | Copy Link、右クリック、Command+Option+C |
 | 表をMarkdownでコピー | Command+Shift+C |
