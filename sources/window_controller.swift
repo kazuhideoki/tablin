@@ -2,12 +2,29 @@ import AppKit
 import UniformTypeIdentifiers
 
 final class TableWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate,
-  NSTextViewDelegate, NSToolbarDelegate, NSMenuItemValidation
+  NSTextViewDelegate, NSSearchFieldDelegate, NSToolbarDelegate, NSMenuItemValidation
 {
   let doc: TablinDocument
   let table = GridTableView()
   let scroll = GridScrollView()
   let status = NSTextField(labelWithString: "")
+  let searchField = NSSearchField()
+  let searchCount = NSTextField(labelWithString: "")
+  private let searchBar = NSStackView()
+  private var searchHeight: NSLayoutConstraint!
+  struct SearchMatch: Equatable {
+    let row: Int
+    let column: Int
+    let range: NSRange
+  }
+  private(set) var searchMatches: [SearchMatch] = []
+  private(set) var searchIndex = 0
+  private struct SearchCell: Hashable {
+    let row: Int
+    let column: Int
+  }
+  private var searchIndicesByCell: [SearchCell: [Int]] = [:]
+  private(set) var searchOverlay: SearchMatchScrollView?
   var editor: CellTextView?
   private var editorScroll: NSScrollView?
   var selectedRow = 1, selectedColumn = 0
@@ -54,6 +71,32 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
     scroll.maxMagnification = 3
     scroll.owner = self
     content.addSubview(scroll)
+    searchBar.translatesAutoresizingMaskIntoConstraints = false
+    searchBar.spacing = 8
+    searchBar.isHidden = true
+    searchField.placeholderString = "Find in Table"
+    searchField.setAccessibilityLabel("Find in Table")
+    searchField.delegate = self
+    searchField.sendsSearchStringImmediately = true
+    searchField.sendsWholeSearchString = false
+    searchCount.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+    searchBar.addArrangedSubview(searchField)
+    searchBar.addArrangedSubview(searchCount)
+    for (title, action) in [
+      ("Previous", #selector(findPrevious(_:))),
+      ("Next", #selector(findNext(_:))), ("Done", #selector(closeSearch(_:))),
+    ] {
+      searchBar.addArrangedSubview(NSButton(title: title, target: self, action: action))
+    }
+    content.addSubview(searchBar)
+    searchHeight = searchBar.heightAnchor.constraint(equalToConstant: 0)
+    NSLayoutConstraint.activate([
+      searchBar.topAnchor.constraint(equalTo: content.topAnchor),
+      searchBar.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 10),
+      searchBar.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -10),
+      searchHeight,
+      searchField.widthAnchor.constraint(greaterThanOrEqualToConstant: 180),
+    ])
     table.owner = self
     table.dataSource = self
     table.delegate = self
@@ -74,7 +117,7 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
     status.textColor = .secondaryLabelColor
     content.addSubview(status)
     NSLayoutConstraint.activate([
-      scroll.topAnchor.constraint(equalTo: content.topAnchor),
+      scroll.topAnchor.constraint(equalTo: searchBar.bottomAnchor),
       scroll.leadingAnchor.constraint(equalTo: content.leadingAnchor),
       scroll.trailingAnchor.constraint(equalTo: content.trailingAnchor),
       scroll.bottomAnchor.constraint(equalTo: status.topAnchor, constant: -4),
@@ -127,8 +170,10 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
     anchorColumn = selectedColumn
     table.dataSource = self
     table.delegate = self
+    rebuildSearch()
     table.reloadData()
     resizing = false
+    updateSearchOverlay()
     updateStatus()
   }
   func numberOfRows(in tableView: NSTableView) -> Int { doc.model.rows.count }
@@ -170,12 +215,170 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
     field.cell?.wraps = doc.model.wraps
     field.cell?.isScrollable = false
     field.alignment = c < 0 ? .right : alignment(c)
+    if c >= 0 && !searchBar.isHidden {
+      field.attributedStringValue = highlightedText(
+        field.attributedStringValue, row: row, column: c)
+    }
     field.setAccessibilityLabel(
       c < 0 ? "Row \(row)" : "\(columnName(c))\(row): \(field.stringValue)")
     cell.wantsLayer = true
     cell.layer?.backgroundColor =
       (row == 0 ? NSColor.controlBackgroundColor : NSColor.textBackgroundColor).cgColor
     return cell
+  }
+  @objc func showSearch(_ sender: Any?) {
+    finishEditing()
+    searchBar.isHidden = false
+    searchHeight.constant = 38
+    window?.contentView?.layoutSubtreeIfNeeded()
+    rebuildSearch()
+    revealSearchMatch()
+    window?.makeFirstResponder(searchField)
+    searchField.selectText(nil)
+  }
+  @objc func closeSearch(_ sender: Any?) {
+    finishEditing()
+    searchBar.isHidden = true
+    searchHeight.constant = 0
+    searchMatches = []
+    searchIndicesByCell = [:]
+    updateSearchOverlay()
+    table.reloadData()
+    window?.makeFirstResponder(table)
+  }
+  func rebuildSearch() {
+    let previous = searchMatches.indices.contains(searchIndex) ? searchMatches[searchIndex] : nil
+    searchMatches = []
+    searchIndicesByCell = [:]
+    let query = searchField.stringValue
+    if !searchBar.isHidden && !query.isEmpty {
+      for (r, row) in doc.model.rows.enumerated() {
+        for (c, cell) in row.cells.enumerated() {
+          let text = cell as NSString
+          var start = 0
+          while start < text.length {
+            let range = text.range(
+              of: query, options: [.caseInsensitive],
+              range: NSRange(location: start, length: text.length - start))
+            if range.location == NSNotFound || range.length == 0 { break }
+            searchIndicesByCell[SearchCell(row: r, column: c), default: []].append(
+              searchMatches.count)
+            searchMatches.append(SearchMatch(row: r, column: c, range: range))
+            start = NSMaxRange(range)
+          }
+        }
+      }
+    }
+    searchIndex = previous.flatMap { searchMatches.firstIndex(of: $0) } ?? 0
+    updateSearchCount()
+  }
+  private func updateSearchCount() {
+    searchCount.stringValue =
+      searchMatches.isEmpty ? "0件" : "\(searchIndex + 1) / \(searchMatches.count)"
+  }
+  func controlTextDidBeginEditing(_ notification: Notification) {
+    guard notification.object as? NSSearchField === searchField else { return }
+    // Clicking an already open find field commits the cell without stealing its field editor.
+    finishEditing(returnFocusToTable: false)
+  }
+  func controlTextDidChange(_ notification: Notification) {
+    guard notification.object as? NSSearchField === searchField else { return }
+    finishEditing(returnFocusToTable: false)
+    searchMatches = []
+    rebuildSearch()
+    revealSearchMatch()
+  }
+  func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+    guard control === searchField, !textView.hasMarkedText() else { return false }
+    switch NSStringFromSelector(selector) {
+    case "insertNewline:", "insertNewlineIgnoringFieldEditor:":
+      if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
+        findPrevious(nil)
+      } else {
+        findNext(nil)
+      }
+    case "cancelOperation:": closeSearch(nil)
+    default: return false
+    }
+    return true
+  }
+  @objc func findNext(_ sender: Any?) { advanceSearch(1) }
+  @objc func findPrevious(_ sender: Any?) { advanceSearch(-1) }
+  private func advanceSearch(_ delta: Int) {
+    if searchBar.isHidden {
+      showSearch(nil)
+      return
+    }
+    let searching =
+      searchField.currentEditor() != nil && window?.firstResponder === searchField.currentEditor()
+    finishEditing(returnFocusToTable: !searching)
+    guard !searchMatches.isEmpty else { return }
+    searchIndex = (searchIndex + delta + searchMatches.count) % searchMatches.count
+    revealSearchMatch()
+  }
+  private func revealSearchMatch() {
+    if searchMatches.indices.contains(searchIndex) {
+      let match = searchMatches[searchIndex]
+      // Search navigation must not prune automatically grown blank edges or change the document.
+      selectedRow = match.row
+      selectedColumn = match.column
+      anchorRow = match.row
+      anchorColumn = match.column
+      table.scrollRowToVisible(match.row)
+      table.scrollColumnToVisible(match.column + columnOffset)
+      table.selectRowIndexes(IndexSet(integer: match.row), byExtendingSelection: false)
+      updateStatus()
+    }
+    updateSearchCount()
+    table.reloadData()
+    updateSearchOverlay()
+    if let overlay = searchOverlay {
+      table.scrollToVisible(overlay.text.convert(overlay.matchRect, to: table))
+    }
+    table.needsDisplay = true
+  }
+  private func highlightedText(_ text: NSAttributedString, row: Int, column: Int)
+    -> NSAttributedString
+  {
+    let value = NSMutableAttributedString(attributedString: text)
+    for index in searchIndicesByCell[SearchCell(row: row, column: column)] ?? [] {
+      // NSDocument can trigger drawing after replacing the model but before reload/reindexing.
+      guard NSMaxRange(searchMatches[index].range) <= value.length else { continue }
+      value.addAttributes(
+        [
+          .backgroundColor: index == searchIndex ? NSColor.systemOrange : NSColor.systemYellow,
+          .foregroundColor: NSColor.black,
+        ], range: searchMatches[index].range)
+    }
+    return value
+  }
+  private func updateSearchOverlay() {
+    searchOverlay?.removeFromSuperview()
+    searchOverlay = nil
+    guard editor == nil, !searchBar.isHidden, searchMatches.indices.contains(searchIndex) else {
+      return
+    }
+    let match = searchMatches[searchIndex]
+    let style = NSMutableParagraphStyle()
+    style.alignment = alignment(match.column)
+    let text = NSAttributedString(
+      string: doc.model.rows[match.row].cells[match.column],
+      attributes: [
+        .font: match.row == 0
+          ? NSFont.boldSystemFont(ofSize: doc.model.fontSize)
+          : NSFont.systemFont(ofSize: doc.model.fontSize),
+        .foregroundColor: NSColor.labelColor,
+        .paragraphStyle: style,
+      ])
+    let frame = table.frameOfCell(atColumn: match.column + columnOffset, row: match.row).insetBy(
+      dx: 1, dy: 1)
+    let overlay = SearchMatchScrollView(
+      frame: frame,
+      value: highlightedText(text, row: match.row, column: match.column),
+      range: match.range, wraps: doc.model.wraps,
+      background: match.row == 0 ? .controlBackgroundColor : .textBackgroundColor)
+    table.addSubview(overlay)
+    searchOverlay = overlay
   }
   private func alignment(_ column: Int) -> NSTextAlignment {
     switch doc.model.columns[column].alignment {
@@ -215,6 +418,7 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
     }
     rowHeights.removeAll()
     table.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0..<doc.model.rows.count))
+    updateSearchOverlay()
   }
   func select(row: Int, column: Int, extend: Bool = false) {
     finishEditing()
@@ -291,6 +495,8 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
   }
   func beginEditing(replace: Bool = false) {
     finishEditing()
+    searchOverlay?.removeFromSuperview()
+    searchOverlay = nil
     anchorRow = selectedRow
     anchorColumn = selectedColumn
     editRow = selectedRow
@@ -338,7 +544,7 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
     if let editor { snapshot.rows[editRow].cells[editColumn] = editor.string }
     return snapshot
   }
-  func finishEditing() {
+  func finishEditing(returnFocusToTable: Bool = true) {
     guard let editor else { return }
     // Commit marked text before ending an edit explicitly through mouse/menu actions.
     editor.unmarkText()
@@ -347,12 +553,15 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
     doc.change("Edit Cell") { $0.rows[editRow].cells[editColumn] = value }
     editorScroll?.removeFromSuperview()
     editorScroll = nil
+    rebuildSearch()
     rowHeights.removeValue(forKey: editRow)
     table.reloadData(
       forRowIndexes: IndexSet(integer: editRow),
       columnIndexes: IndexSet(integersIn: 0..<table.numberOfColumns))
     table.noteHeightOfRows(withIndexesChanged: IndexSet(integer: editRow))
-    window?.makeFirstResponder(table)
+    if !searchBar.isHidden { table.reloadData() }
+    updateSearchOverlay()
+    if returnFocusToTable { window?.makeFirstResponder(table) }
     updateStatus()
   }
   func cancelEditing() {
@@ -363,6 +572,7 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
     editor = nil
     editorScroll?.removeFromSuperview()
     editorScroll = nil
+    updateSearchOverlay()
     window?.makeFirstResponder(table)
     updateStatus()
   }
@@ -469,8 +679,16 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
     revealFocusedCell()
   }
   func revealFocusedCell() {
-    table.scrollToVisible(table.frameOfCell(
-      atColumn: selectedColumn + columnOffset, row: selectedRow))
+    if let overlay = searchOverlay, searchMatches.indices.contains(searchIndex),
+      searchMatches[searchIndex].row == selectedRow,
+      searchMatches[searchIndex].column == selectedColumn
+    {
+      table.scrollToVisible(overlay.text.convert(overlay.matchRect, to: table))
+      return
+    }
+    table.scrollToVisible(
+      table.frameOfCell(
+        atColumn: selectedColumn + columnOffset, row: selectedRow))
   }
   @objc func prune(_ sender: Any?) {
     mutate("Prune Empty Edges") { model in

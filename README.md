@@ -45,6 +45,9 @@ make run INSTALL_DIR=/Applications
 
 | 操作 | キー・UI |
 | --- | --- |
+| 表全体を検索（一致文字をハイライト） | Command+F |
+| 次 / 前の一致箇所 | 検索欄で Return / Shift+Return、Command+G / Command+Shift+G |
+| 検索を閉じて表へ戻る | 検索欄で Escape、Done |
 | セル移動 | 矢印キー / Ctrl+F・B・N・P（右・左・下・上、Shift併用で範囲選択） |
 | 右・左へ移動 | Tab / Shift+Tab |
 | 下・上へ移動 | Return / Shift+Return |
@@ -70,6 +73,8 @@ make run INSTALL_DIR=/Applications
 | 表をCSVでコピー | Edit → Copy Table as CSV |
 | 行番号・表示倍率 | Viewメニュー |
 | 列の文字揃え | ツールバーのLeft / Center / Right |
+
+検索は見出しを含み、大文字・小文字を区別しません。左から右、上から下へ一致箇所ごとに移動し、末尾から先頭へ循環します。現在の一致はオレンジ、他の一致は黄色で表示します。長いセルでは一致文字が見える位置までセル内をスクロールします。検索欄へ戻ると編集中のセルを確定し、日本語変換中のReturnは検索移動に使いません。
 
 0行目は見出しです。見出しも通常のセルと同じ方法で編集できます。
 右端・下端を越える移動では行・列を追加します。空の行・列も保存され、末尾の不要な空白はPruneで取り除けます。
