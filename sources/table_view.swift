@@ -21,8 +21,9 @@ final class GridScrollView: NSScrollView {
       let header = table.headerView, let clip = header.superview as? NSClipView,
       clip.frame.height > 0
     else { return }
-    clip.setBoundsSize(NSSize(
-      width: clip.frame.width / magnification, height: clip.frame.height / magnification))
+    clip.setBoundsSize(
+      NSSize(
+        width: clip.frame.width / magnification, height: clip.frame.height / magnification))
     header.setFrameSize(NSSize(width: table.frame.width, height: clip.bounds.height))
     clip.scroll(to: NSPoint(x: contentView.bounds.minX, y: 0))
   }
@@ -44,6 +45,13 @@ final class GridTableView: NSTableView {
     var children = super.accessibilityChildren() ?? []
     if let editor = owner?.editor { children.append(editor) }
     return children
+  }
+  override func layout() {
+    super.layout()
+    // NSTableView creates row views lazily; keep the passive match viewport above those rows.
+    if let overlay = owner?.searchOverlay, overlay.superview === self, subviews.last !== overlay {
+      addSubview(overlay, positioned: .above, relativeTo: nil)
+    }
   }
   override var acceptsFirstResponder: Bool { true }
   override func mouseDown(with event: NSEvent) {
@@ -247,4 +255,51 @@ final class CellTextView: NSTextView {
     }
     super.keyDown(with: event)
   }
+}
+
+// A passive viewport reveals a match even when the ordinary cell label clips its suffix.
+// Mouse events still belong to the grid, so clicking/double-clicking keeps normal cell behavior.
+final class SearchMatchScrollView: NSScrollView {
+  let text: NSTextView
+  let matchRect: NSRect
+  init(frame: NSRect, value: NSAttributedString, range: NSRange, wraps: Bool, background: NSColor) {
+    // Text layout is completed before computing the precise range to reveal.
+    let text = NSTextView()
+    self.text = text
+    let layout = text.layoutManager!
+    let container = text.textContainer!
+    text.isEditable = false
+    text.isSelectable = false
+    text.isVerticallyResizable = true
+    text.isHorizontallyResizable = !wraps
+    text.textContainerInset = NSSize(width: 3, height: 3)
+    text.backgroundColor = background
+    container.lineFragmentPadding = 0
+    container.widthTracksTextView = wraps
+    container.containerSize = NSSize(
+      width: wraps ? max(1, frame.width - 6) : max(frame.width - 6, ceil(value.size().width)),
+      height: 1_000_000)
+    text.frame = NSRect(origin: .zero, size: frame.size)
+    text.textStorage!.setAttributedString(value)
+    layout.ensureLayout(for: container)
+    let used = layout.usedRect(for: container)
+    text.setFrameSize(
+      NSSize(
+        width: wraps ? frame.width : max(frame.width, ceil(used.maxX) + 6),
+        height: max(frame.height, ceil(used.maxY) + 6)))
+    let glyphs = layout.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+    matchRect = layout.boundingRect(forGlyphRange: glyphs, in: container).offsetBy(dx: 3, dy: 3)
+    super.init(frame: frame)
+    borderType = .noBorder
+    hasVerticalScroller = false
+    hasHorizontalScroller = false
+    drawsBackground = true
+    backgroundColor = background
+    documentView = text
+    text.scrollToVisible(matchRect.insetBy(dx: -2, dy: -2))
+    setAccessibilityElement(false)
+    text.setAccessibilityElement(false)
+  }
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

@@ -150,6 +150,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     item(edit, "Paste", #selector(NSText.paste(_:)), "v")
     item(edit, "Select All", #selector(NSText.selectAll(_:)), "a")
     edit.addItem(.separator())
+    item(edit, "Find…", #selector(TableWindowController.showSearch(_:)), "f")
+    item(edit, "Find Next", #selector(TableWindowController.findNext(_:)), "g")
+    item(
+      edit, "Find Previous", #selector(TableWindowController.findPrevious(_:)), "g",
+      [.command, .shift])
+    edit.addItem(.separator())
     item(edit, "Edit Cell", #selector(TableWindowController.editCell(_:)))
     item(edit, "Clear Cells", #selector(TableWindowController.clearCells(_:)))
     item(

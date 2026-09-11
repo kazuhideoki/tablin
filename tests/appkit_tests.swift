@@ -97,7 +97,8 @@ import AppKit
     precondition(abs(enlargedSize.width / originalSize.width - 1.1) < 0.001)
     precondition(abs(enlargedSize.height / originalSize.height - 1.1) < 0.001)
     precondition(controller.editor === zoomEditor)
-    precondition(abs(zoomEditor.convert(zoomEditor.bounds, to: nil).width / editorSize.width - 1.1) < 0.001)
+    precondition(
+      abs(zoomEditor.convert(zoomEditor.bounds, to: nil).width / editorSize.width - 1.1) < 0.001)
     let center = controller.table.convert(
       NSPoint(x: cellFrame.midX, y: cellFrame.midY), to: nil)
     let hit = controller.table.convert(center, from: nil)
@@ -115,9 +116,10 @@ import AppKit
     controller.scroll.magnification = 1
     print("PASS whole-table zoom / editor scaling / hit testing / limits without document changes")
     let zoomDocument = TablinDocument()
-    zoomDocument.model = TableModel(matrix: (0..<80).map { row in
-      (0..<16).map { "\(row):\($0)" }
-    })
+    zoomDocument.model = TableModel(
+      matrix: (0..<80).map { row in
+        (0..<16).map { "\(row):\($0)" }
+      })
     zoomDocument.makeWindowControllers()
     let zoomController = zoomDocument.tableController!
     zoomController.window?.contentView?.layoutSubtreeIfNeeded()
@@ -188,8 +190,153 @@ import AppKit
     checkControlNavigation()
     checkCommandReturn()
     checkDeletionShortcuts()
+    checkSearch()
+    checkSearchVisibilityAndFocus()
     document.close()
-    print("21 AppKit checks passed")
+    print("24 AppKit checks passed")
+  }
+
+  static func checkSearchVisibilityAndFocus() {
+    let document = TablinDocument()
+    document.model = TableModel(matrix: [
+      ["Header"], [String(repeating: "long text ", count: 100) + "needle"],
+    ])
+    document.model.columns[0].width = 100
+    document.makeWindowControllers()
+    defer { document.close() }
+    let controller = document.tableController!
+    controller.window!.contentView!.layoutSubtreeIfNeeded()
+    controller.showSearch(nil)
+    func query(_ value: String) {
+      controller.searchField.stringValue = value
+      controller.controlTextDidChange(
+        Notification(
+          name: NSControl.textDidChangeNotification,
+          object: controller.searchField))
+    }
+    for wraps in [false, true] {
+      document.model.wraps = wraps
+      controller.reload()
+      query("needle")
+      let overlay = controller.searchOverlay!
+      controller.table.layoutSubtreeIfNeeded()
+      precondition(controller.table.subviews.last === overlay)
+      precondition(
+        overlay.text.visibleRect.contains(overlay.matchRect),
+        "wraps=\(wraps) visible=\(overlay.text.visibleRect) match=\(overlay.matchRect) textFrame=\(overlay.text.frame) overlay=\(overlay.frame)"
+      )
+      precondition(
+        controller.table.visibleRect.contains(
+          overlay.text.convert(overlay.matchRect, to: controller.table)))
+      precondition(overlay.hitTest(.zero) == nil)
+      for _ in 0..<5 {
+        controller.zoomIn(nil)
+        precondition(
+          controller.table.visibleRect.insetBy(dx: -1, dy: -1).contains(
+            overlay.text.convert(overlay.matchRect, to: controller.table)))
+      }
+      controller.scroll.magnification = 1
+      if wraps {
+        precondition(overlay.text.visibleRect.minY > 0)
+      } else {
+        precondition(overlay.text.visibleRect.minX > 0)
+      }
+    }
+    controller.beginEditing()
+    precondition(controller.searchOverlay == nil)
+    controller.editor!.string = "needle needle"
+    controller.window!.makeFirstResponder(controller.searchField)
+    let searchInput = controller.window!.firstResponder!
+    controller.controlTextDidBeginEditing(
+      Notification(
+        name: NSControl.textDidBeginEditingNotification,
+        object: controller.searchField))
+    precondition(controller.editor == nil)
+    precondition(document.model.rows[1].cells[0] == "needle needle")
+    precondition(controller.window!.firstResponder === searchInput)
+    precondition(controller.searchMatches.count == 2)
+    controller.findNext(nil)
+    controller.findNext(nil)
+    precondition(controller.searchIndex == 0 && controller.window!.firstResponder === searchInput)
+    controller.beginEditing()
+    controller.editor!.string = "needle"
+    controller.closeSearch(nil)
+    precondition(controller.editor == nil && controller.searchOverlay == nil)
+    precondition(document.model.rows[1].cells[0] == "needle")
+    print(
+      "PASS clipped and tall matches are visible / passive viewport / return to find preserves focus / Done commits edit"
+    )
+  }
+
+  static func checkSearch() {
+    let document = TablinDocument()
+    document.model = TableModel(matrix: [["Cat", "日本語"], ["🐈 cat CAT", "日本語 日本語"]])
+    document.makeWindowControllers()
+    defer { document.close() }
+    let controller = document.tableController!
+    let original = document.model
+    controller.showSearch(nil)
+    func query(_ value: String) {
+      controller.searchField.stringValue = value
+      controller.controlTextDidChange(
+        Notification(
+          name: NSControl.textDidChangeNotification,
+          object: controller.searchField))
+    }
+    query("cat")
+    precondition(controller.searchMatches.count == 3 && controller.searchIndex == 0)
+    precondition(controller.selectedRow == 0)
+    controller.findNext(nil)
+    precondition(controller.selectedRow == 1 && controller.searchMatches[1].range.location == 3)
+    controller.findNext(nil)
+    precondition(controller.searchIndex == 2)
+    let column = controller.table.tableColumns[controller.columnOffset]
+    let cell = controller.tableView(controller.table, viewFor: column, row: 1) as! NSTableCellView
+    let value = cell.textField!.attributedStringValue
+    precondition(
+      value.attribute(.backgroundColor, at: 3, effectiveRange: nil) as? NSColor == .systemYellow)
+    precondition(
+      value.attribute(.backgroundColor, at: 7, effectiveRange: nil) as? NSColor == .systemOrange)
+    controller.findNext(nil)
+    precondition(controller.searchIndex == 0)
+    controller.findPrevious(nil)
+    precondition(controller.searchIndex == 2)
+    query("日本語")
+    precondition(controller.searchMatches.count == 3)
+    let input = NSTextView()
+    input.setMarkedText(
+      "にほん", selectedRange: NSRange(location: 3, length: 0),
+      replacementRange: NSRange(location: NSNotFound, length: 0))
+    precondition(
+      !controller.control(
+        controller.searchField, textView: input,
+        doCommandBy: #selector(NSResponder.insertNewline(_:))))
+    input.unmarkText()
+    precondition(
+      controller.control(
+        controller.searchField, textView: input,
+        doCommandBy: #selector(NSResponder.insertNewline(_:))))
+    precondition(controller.searchIndex == 1)
+    query("missing")
+    controller.findNext(nil)
+    precondition(controller.searchCount.stringValue == "0件")
+    query("")
+    precondition(controller.searchMatches.isEmpty)
+    precondition(document.model == original && !document.isDocumentEdited)
+    query("cat")
+    controller.closeSearch(nil)
+    precondition(
+      controller.searchMatches.isEmpty && controller.window!.firstResponder === controller.table)
+    controller.select(row: 1, column: 0)
+    controller.beginEditing()
+    controller.editor!.string = "cat cat cat"
+    controller.showSearch(nil)
+    precondition(controller.editor == nil && controller.searchMatches.count == 4)
+    document.undoManager!.undo()
+    precondition(controller.searchMatches.count == 3)
+    print(
+      "PASS search ordering / Unicode ranges / highlights / wraparound / IME / no matches / nonmutating search / edit and undo"
+    )
   }
 
   static func checkDeletionShortcuts() {
@@ -283,7 +430,8 @@ import AppKit
       controller.table.keyDown(with: plainReturn)
       precondition(controller.selectedRow == 2 && controller.selectedColumn == 3)
     }
-    print("PASS Command Return / keypad Enter moves right while editing or selected; Return moves down")
+    print(
+      "PASS Command Return / keypad Enter moves right while editing or selected; Return moves down")
   }
 
   static func checkControlNavigation() {
@@ -452,7 +600,8 @@ import AppKit
     precondition(labels.table.tableColumns[1].title == "B")
     precondition(labels.table.tableColumns[1].identifier.rawValue == linkedColumn.uuidString)
     precondition(labelsDocument.model.rows[0].cells[1] == "heading")
-    print("PASS column labels / Z-AA boundary / row-number offset / stable identity after insertion")
+    print(
+      "PASS column labels / Z-AA boundary / row-number offset / stable identity after insertion")
 
   }
 }
