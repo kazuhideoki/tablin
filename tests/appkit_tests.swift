@@ -187,13 +187,14 @@ import AppKit
     precondition(document.model.columns[0].width == 500)
     print("PASS column resizing recalculates wrapped row height")
     try checkAutomaticGrowth()
+    try checkRichText()
     checkControlNavigation()
     checkCommandReturn()
     checkDeletionShortcuts()
     checkSearch()
     checkSearchVisibilityAndFocus()
     document.close()
-    print("24 AppKit checks passed")
+    print("25 AppKit checks passed")
   }
 
   static func checkSearchVisibilityAndFocus() {
@@ -602,6 +603,167 @@ import AppKit
     precondition(labelsDocument.model.rows[0].cells[1] == "heading")
     print(
       "PASS column labels / Z-AA boundary / row-number offset / stable identity after insertion")
+
+  }
+
+  static func checkRichText() throws {
+    let richDoc = TablinDocument()
+    richDoc.model = TableModel(matrix: [["Header", "Other"], ["Hello 日本語 👋", "plain"]])
+    richDoc.makeWindowControllers()
+    let rich = richDoc.tableController!
+    rich.select(row: 1, column: 0)
+    rich.beginEditing()
+    rich.editor!.setSelectedRange(NSRange(location: 6, length: 3))
+    for bit in [1, 2, 4] { rich.toggleStyle(bit) }
+    let richDraft = rich.modelForSaving()
+    precondition(richDraft.rows[1].formats?[0]?.first?.style == 7)
+    precondition(richDraft.rows[1].formats?[0]?.first?.location == 6)
+    precondition(richDraft.rows[1].formats?[0]?.first?.length == 3)
+    _ = try richDraft.validated()
+    rich.finishEditing()
+    let richData = try richDoc.data(ofType: tablinType)
+    let richRestored = try JSONDecoder().decode(TableModel.self, from: richData).validated()
+    precondition(richRestored == richDoc.model)
+    let clipboard =
+      NSPasteboard.general.pasteboardItems?.map { item in
+        item.types.compactMap { type in item.data(forType: type).map { (type, $0) } }
+      } ?? []
+    defer {
+      NSPasteboard.general.clearContents()
+      let items = clipboard.map { values in
+        let item = NSPasteboardItem()
+        for (type, data) in values { item.setData(data, forType: type) }
+        return item
+      }
+      NSPasteboard.general.writeObjects(items)
+    }
+    rich.copy(nil)
+    rich.select(row: 1, column: 1)
+    rich.paste(nil)
+    precondition(richDoc.model.rows[1].formats?[1] == richDoc.model.rows[1].formats?[0])
+    rich.beginEditing()
+    rich.editor!.setSelectedRange(NSRange(location: 0, length: 5))
+    rich.toggleStyle(1)
+    rich.cancelEditing()
+    precondition(richDoc.model.rows[1].formats?[1] == richRestored.rows[1].formats?[0])
+    rich.select(row: 1, column: 0)
+    rich.select(row: 1, column: 1, extend: true)
+    let richUndo = richDoc.undoManager!
+    while richUndo.groupingLevel > 0 { richUndo.endUndoGrouping() }
+    richUndo.removeAllActions()
+    richUndo.groupsByEvent = false
+    richUndo.beginUndoGrouping()
+    rich.toggleStyle(4)
+    richUndo.endUndoGrouping()
+    for c in 0...1 {
+      rich.attributedCell(row: 1, column: c).enumerateAttributes(
+        in: NSRange(location: 0, length: rich.attributedCell(row: 1, column: c).length)
+      ) { a, _, _ in
+        precondition(TableWindowController.style(a) & 4 != 0)
+      }
+    }
+    richUndo.undo()
+    precondition(richDoc.model.rows[1].formats?[0] == richRestored.rows[1].formats?[0])
+    var shifted = richDoc.model
+    shifted.insertColumn(at: 0)
+    precondition(shifted.rows[1].formats?[1] == richRestored.rows[1].formats?[0])
+    shifted.removeColumn(at: 0)
+    precondition(shifted == richDoc.model)
+    var invalidRuns = richDoc.model
+    invalidRuns.rows[1].formats?[0] = [TextRun(location: 0, length: Int.max, style: 1)]
+    precondition((try? invalidRuns.validated()) == nil)
+    print(
+      "PASS rich text ranges / combined styles / persistence / copy / cancel / multi-cell undo / column shift / validation"
+    )
+
+    // Merely visiting any cell must preserve implicit formatting and dirty state.
+    let untouched = TablinDocument()
+    untouched.model = TableModel(matrix: [["Header", ""], ["body", ""]])
+    untouched.makeWindowControllers()
+    let visiting = untouched.tableController!
+    let originalModel = untouched.model
+    for r in 0...1 {
+      for c in 0...1 {
+        visiting.select(row: r, column: c)
+        visiting.beginEditing()
+        precondition(visiting.modelForSaving() == originalModel)
+        visiting.finishEditing()
+        visiting.beginEditing()
+        visiting.cancelEditing()
+        precondition(untouched.model == originalModel && !untouched.isDocumentEdited)
+        precondition(untouched.undoManager?.canUndo == false)
+      }
+    }
+    visiting.select(row: 0, column: 0)
+    visiting.copy(nil)
+    visiting.paste(nil)
+    precondition(
+      TableWindowController.style(
+        visiting.attributedCell(row: 0, column: 0).attributes(at: 0, effectiveRange: nil)) == 1)
+    visiting.select(row: 1, column: 0)
+    visiting.paste(nil)
+    precondition(
+      TableWindowController.style(
+        visiting.attributedCell(row: 1, column: 0).attributes(at: 0, effectiveRange: nil)) == 1)
+    // Empty cells retain pending formatting and participate in toggling it off.
+    visiting.select(row: 1, column: 1, extend: true)
+    for bit in [1, 2, 4] {
+      visiting.toggleStyle(bit)
+      visiting.toggleStyle(bit)
+      precondition(
+        TableWindowController.style(
+          visiting.attributedCell(row: 1, column: 0).attributes(at: 0, effectiveRange: nil)) & bit
+          == 0)
+      precondition(untouched.model.rows[1].formats?[1] == [])
+    }
+    visiting.select(row: 1, column: 1)
+    visiting.toggleStyle(4)
+    _ = try untouched.model.validated()
+    let emptyRoundTrip = try JSONDecoder().decode(
+      TableModel.self, from: untouched.data(ofType: tablinType))
+    precondition(emptyRoundTrip.rows[1].formats?[1]?.first?.style == 4)
+    visiting.beginEditing()
+    visiting.editor!.insertText("new", replacementRange: visiting.editor!.selectedRange())
+    precondition(visiting.modelForSaving().rows[1].formats?[1]?.first?.style == 4)
+    visiting.finishEditing()
+    // Search highlights and the passive current-match viewport keep the same formatting.
+    visiting.searchField.stringValue = "new"
+    visiting.showSearch(nil)
+    precondition(visiting.searchOverlay != nil)
+    precondition(
+      TableWindowController.style(
+        visiting.searchOverlay!.text.attributedString().attributes(at: 0, effectiveRange: nil)) == 4
+    )
+    visiting.toggleStyle(1)
+    precondition(
+      TableWindowController.style(
+        visiting.searchOverlay!.text.attributedString().attributes(at: 0, effectiveRange: nil)) == 5
+    )
+    visiting.closeSearch(nil)
+    visiting.beginEditing()
+    let editing = visiting.editor!
+    editing.setSelectedRange(NSRange(location: 0, length: 3))
+    while editing.undoManager!.groupingLevel > 0 { editing.undoManager!.endUndoGrouping() }
+    editing.undoManager!.removeAllActions()
+    editing.undoManager!.groupsByEvent = false
+    editing.undoManager!.beginUndoGrouping()
+    visiting.toggleStyle(2)
+    editing.undoManager!.endUndoGrouping()
+    precondition(visiting.modelForSaving().rows[1].formats?[1]?.first?.style == 7)
+    editing.undoManager!.undo()
+    precondition(visiting.modelForSaving().rows[1].formats?[1]?.first?.style == 5)
+    editing.undoManager!.beginUndoGrouping()
+    editing.setMarkedText(
+      "日本", selectedRange: NSRange(location: 2, length: 0),
+      replacementRange: NSRange(location: 0, length: 3))
+    let marked = editing.attributedString().copy() as! NSAttributedString
+    visiting.toggleStyle(1)
+    precondition(editing.attributedString().isEqual(to: marked))
+    editing.undoManager!.endUndoGrouping()
+    visiting.cancelEditing()
+    print(
+      "PASS no-op edits / implicit header copy / empty cell formatting / search formatting / editor undo / IME"
+    )
 
   }
 }

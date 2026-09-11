@@ -2,7 +2,8 @@ import Foundation
 
 // Command-line tests have no app bundle; production and dev apps use their registered scheme.
 let tablinURLScheme: String = {
-  guard let types = Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]],
+  guard
+    let types = Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]],
     let schemes = types.first?["CFBundleURLSchemes"] as? [String], let scheme = schemes.first
   else { return "tablin" }
   return scheme
@@ -13,9 +14,16 @@ struct TableColumn: Codable, Equatable {
   var width: Double = 180
   var alignment: Int = 0
 }
+// UTF-16 ranges. A single zero-length run stores the typing style of an empty cell.
+struct TextRun: Codable, Equatable {
+  var location: Int
+  var length: Int
+  var style: Int
+}
 struct TableRow: Codable, Equatable {
   var id = UUID()
   var cells: [String]
+  var formats: [Int: [TextRun]]?
 }
 struct TableModel: Codable, Equatable {
   var version = 1
@@ -37,7 +45,22 @@ struct TableModel: Codable, Equatable {
     guard version == 1, !columns.isEmpty, !rows.isEmpty,
       Set(columns.map(\.id)).count == columns.count,
       Set(rows.map(\.id)).count == rows.count,
-      rows.allSatisfy({ $0.cells.count == columns.count }),
+      rows.allSatisfy({ row in
+        row.cells.count == columns.count
+          && (row.formats ?? [:]).allSatisfy { column, runs in
+            guard row.cells.indices.contains(column) else { return false }
+            var end = 0
+            return runs.allSatisfy { run in
+              guard run.location >= end, run.length >= 0, run.style > 0, run.style <= 7,
+                run.length > 0 || (row.cells[column].isEmpty && runs.count == 1),
+                run.location <= row.cells[column].utf16.count,
+                run.length <= row.cells[column].utf16.count - run.location
+              else { return false }
+              end = run.location + run.length
+              return true
+            }
+          }
+      }),
       columns.allSatisfy({
         $0.width.isFinite && (60...2000).contains($0.width) && (0...2).contains($0.alignment)
       }),
@@ -52,7 +75,13 @@ struct TableModel: Codable, Equatable {
   }
   mutating func insertColumn(at index: Int) {
     columns.insert(TableColumn(), at: index)
-    for i in rows.indices { rows[i].cells.insert("", at: index) }
+    for i in rows.indices {
+      rows[i].cells.insert("", at: index)
+      if let formats = rows[i].formats {
+        rows[i].formats = Dictionary(
+          uniqueKeysWithValues: formats.map { ($0.key >= index ? $0.key + 1 : $0.key, $0.value) })
+      }
+    }
   }
   mutating func removeRow(at index: Int) {
     guard rows.count > 1, index > 0 else { return }
@@ -61,14 +90,25 @@ struct TableModel: Codable, Equatable {
   mutating func removeColumn(at index: Int) {
     guard columns.count > 1 else { return }
     columns.remove(at: index)
-    for i in rows.indices { rows[i].cells.remove(at: index) }
+    for i in rows.indices {
+      rows[i].cells.remove(at: index)
+      if let formats = rows[i].formats {
+        rows[i].formats = Dictionary(
+          uniqueKeysWithValues: formats.filter { $0.key != index }.map {
+            ($0.key > index ? $0.key - 1 : $0.key, $0.value)
+          })
+      }
+    }
   }
   mutating func paste(_ matrix: [[String]], row: Int, column: Int) {
     let width = matrix.map(\.count).max() ?? 0
     while rows.count < row + matrix.count { insertRow(at: rows.count) }
     while columns.count < column + width { insertColumn(at: columns.count) }
     for (r, values) in matrix.enumerated() {
-      for (c, value) in values.enumerated() { rows[row + r].cells[column + c] = value }
+      for (c, value) in values.enumerated() {
+        rows[row + r].cells[column + c] = value
+        rows[row + r].formats?.removeValue(forKey: column + c)
+      }
     }
   }
   func link(file: URL, row: Int, column: Int) -> URL {
