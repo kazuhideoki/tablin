@@ -56,6 +56,21 @@ import AppKit
     precondition(cancelled.rows[1].cells[0] == original)
     undo.endUndoGrouping()
     print("PASS saving draft keeps editor alive; cancel restores original")
+    controller.beginEditing()
+    let liveEditor = controller.editor!
+    let initialHeight = controller.table.rect(ofRow: 1).height
+    liveEditor.insertText("\n\n", replacementRange: liveEditor.selectedRange())
+    precondition(controller.table.rect(ofRow: 1).height > initialHeight + 15)
+    precondition(controller.editor === liveEditor)
+    precondition(document.model.rows[1].cells[0] == original)
+    precondition(abs(liveEditor.enclosingScrollView!.frame.height
+      - (controller.table.frameOfCell(atColumn: 0, row: 1).height - 2)) < 1)
+    liveEditor.insertText(original, replacementRange: NSRange(location: 0, length: (liveEditor.string as NSString).length))
+    precondition(controller.table.rect(ofRow: 1).height < initialHeight + 2)
+    liveEditor.insertText("\n\n", replacementRange: liveEditor.selectedRange())
+    controller.cancelEditing()
+    precondition(abs(controller.table.rect(ofRow: 1).height - initialHeight) < 2)
+    print("PASS live newline height / trailing empty line / deletion shrinks / cancel restores height")
     // Legacy scrollers must not consume the single-line editing viewport.
     controller.beginEditing()
     let input = controller.editor!
