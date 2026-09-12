@@ -389,6 +389,22 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
       : NSFont.systemFont(ofSize: doc.model.fontSize)
     var height: CGFloat = ceil(font.ascender - font.descender + font.leading) + 8
     for c in doc.model.columns.indices {
+      if row == editRow, c == editColumn, let editor,
+        let editorContainer = editor.textContainer
+      {
+        // Measure a copy so layout's font substitution cannot alter the draft's styles.
+        let storage = NSTextStorage(attributedString: editor.attributedString())
+        let layout = NSLayoutManager()
+        let container = NSTextContainer(containerSize: editorContainer.containerSize)
+        container.lineFragmentPadding = editorContainer.lineFragmentPadding
+        storage.addLayoutManager(layout)
+        layout.addTextContainer(container)
+        layout.ensureLayout(for: container)
+        // A trailing newline has an empty caret line outside usedRect.
+        let bottom = max(layout.usedRect(for: container).maxY, layout.extraLineFragmentRect.maxY)
+        height = max(height, ceil(bottom) + 2 * editor.textContainerInset.height + 2)
+        continue
+      }
       let width = doc.model.wraps ? max(40, doc.model.columns[c].width - 12) : 1_000_000
       let rect = attributedCell(row: row, column: c).boundingRect(
         with: NSSize(width: width, height: 100000),
@@ -574,12 +590,26 @@ final class TableWindowController: NSWindowController, NSTableViewDataSource, NS
     editor = nil
     editorScroll?.removeFromSuperview()
     editorScroll = nil
+    rowHeights.removeValue(forKey: editRow)
+    table.noteHeightOfRows(withIndexesChanged: IndexSet(integer: editRow))
     updateSearchOverlay()
     window?.makeFirstResponder(table)
     updateStatus()
   }
   func textDidChange(_ notification: Notification) {
     doc.updateChangeCount(.changeDone)
+    resizeEditingRow()
+  }
+  private func resizeEditingRow() {
+    guard let editor, let editorScroll else { return }
+    rowHeights.removeValue(forKey: editRow)
+    NSAnimationContext.runAnimationGroup { context in
+      context.duration = 0
+      table.noteHeightOfRows(withIndexesChanged: IndexSet(integer: editRow))
+    }
+    editorScroll.frame = table.frameOfCell(
+      atColumn: editColumn + columnOffset, row: editRow).insetBy(dx: 1, dy: 1)
+    editor.minSize = NSSize(width: 0, height: editorScroll.contentSize.height)
   }
   func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
     guard !textView.hasMarkedText() else { return false }

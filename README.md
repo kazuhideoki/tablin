@@ -56,7 +56,7 @@ make run INSTALL_DIR=/Applications
 | 内容を置き換えて編集 | セル選択中に文字を入力 |
 | 内容を残して文頭から編集 | Control+A |
 | 内容を残して文末から編集 | Control+E、ダブルクリック |
-| 編集中のセル内改行 | Option+Return |
+| 編集中のセル内改行（入力中も行の高さが追従） | Option+Return |
 | 右のセルへ移動（編集中は確定） | Cmd+Return |
 | 編集を取り消す | Escape |
 | 編集中に隣のセルへ | Tab、左右の文字列端で矢印 |
